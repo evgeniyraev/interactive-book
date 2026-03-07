@@ -63,6 +63,37 @@ async function copyManyFilesToAssets(filePaths) {
   return imported;
 }
 
+function normalizeImageExtension(fileName = '') {
+  const ext = path.extname(fileName).toLowerCase();
+  if (IMAGE_EXTENSIONS.has(ext)) {
+    return ext;
+  }
+
+  return '.png';
+}
+
+async function copyManyBuffersToAssets(files) {
+  await ensureDataDirectories();
+
+  const imported = [];
+  for (const file of files) {
+    const ext = normalizeImageExtension(file?.name || '');
+    const fileName = randomName(ext);
+    const assetsRelativePath = toPortablePath(path.join('assets', fileName));
+    const destination = resolveDataPath(assetsRelativePath);
+
+    const bytes = file?.data;
+    if (!(bytes instanceof ArrayBuffer)) {
+      continue;
+    }
+
+    await fs.writeFile(destination, Buffer.from(new Uint8Array(bytes)));
+    imported.push(assetsRelativePath);
+  }
+
+  return imported;
+}
+
 async function pickFileAndCopy(options = {}) {
   const result = await dialog.showOpenDialog({
     properties: ['openFile'],
@@ -196,6 +227,7 @@ async function readExternalManifest(baseFolder) {
 module.exports = {
   pickFileAndCopy,
   copyManyFilesToAssets,
+  copyManyBuffersToAssets,
   resolveDataPath,
   exportPackage,
   importPackageByDialog,

@@ -179,8 +179,31 @@ function appendImagePages(assetPaths) {
   renderPages();
 }
 
-async function importImagesFromPaths(filePaths) {
-  const imported = await window.bookApi.importAssetsFromPaths(filePaths);
+async function filesToImportPayload(files) {
+  const payload = [];
+
+  for (const file of Array.from(files || [])) {
+    if (!file || (file.type && !file.type.startsWith('image/'))) {
+      continue;
+    }
+
+    payload.push({
+      name: file.name || 'image.png',
+      data: await file.arrayBuffer()
+    });
+  }
+
+  return payload;
+}
+
+async function importImagesFromFiles(files) {
+  const payload = await filesToImportPayload(files);
+  if (payload.length === 0) {
+    setStatus('No valid image files were imported.');
+    return;
+  }
+
+  const imported = await window.bookApi.importAssetsFromFiles(payload);
   if (!imported || imported.length === 0) {
     setStatus('No valid image files were imported.');
     return;
@@ -253,13 +276,7 @@ function bindDropZone() {
   document.body.append(filePicker);
 
   filePicker.addEventListener('change', async () => {
-    const paths = Array.from(filePicker.files || [])
-      .map((file) => file.path)
-      .filter(Boolean);
-
-    if (paths.length > 0) {
-      await importImagesFromPaths(paths);
-    }
+    await importImagesFromFiles(filePicker.files || []);
 
     filePicker.value = '';
   });
@@ -281,13 +298,7 @@ function bindDropZone() {
     event.preventDefault();
     els.dropImagesZone.classList.remove('active');
 
-    const paths = Array.from(event.dataTransfer?.files || [])
-      .map((file) => file.path)
-      .filter(Boolean);
-
-    if (paths.length > 0) {
-      await importImagesFromPaths(paths);
-    }
+    await importImagesFromFiles(event.dataTransfer?.files || []);
   });
 }
 

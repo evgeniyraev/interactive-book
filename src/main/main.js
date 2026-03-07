@@ -9,6 +9,7 @@ const {
 const {
   pickFileAndCopy,
   copyManyFilesToAssets,
+  copyManyBuffersToAssets,
   resolveDataPath,
   exportPackage,
   importPackageByDialog
@@ -143,6 +144,11 @@ function registerIpcHandlers() {
   ipcMain.handle('asset:import-paths', async (_, filePaths) => {
     const safePaths = Array.isArray(filePaths) ? filePaths.filter(Boolean) : [];
     return copyManyFilesToAssets(safePaths);
+  });
+
+  ipcMain.handle('asset:import-files', async (_, files) => {
+    const safeFiles = Array.isArray(files) ? files : [];
+    return copyManyBuffersToAssets(safeFiles);
   });
 
   ipcMain.handle('package:export', () => exportPackage());

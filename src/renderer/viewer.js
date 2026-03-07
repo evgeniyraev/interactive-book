@@ -153,7 +153,7 @@ async function buildPageMarkup(page, pageBackground) {
 
   if (page.type === 'image' && page.imagePath) {
     const src = await resolveAssetUrl(page.imagePath);
-    return `<div class="page-content image"><img alt="Book page" src="${src}" /></div>`;
+    return `<div class="page-content image"><img alt="Book page" src="${src}" draggable="false" /></div>`;
   }
 
   const text = escapeHtml(page.text || page.title || '');
