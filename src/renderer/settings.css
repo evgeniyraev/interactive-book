@@ -29,6 +29,12 @@ h2 {
   margin: 0;
 }
 
+h3 {
+  margin: 0.3rem 0 0.7rem;
+  font-size: 0.98rem;
+  color: #334155;
+}
+
 h2 {
   font-size: 1.1rem;
   margin-bottom: 0.9rem;

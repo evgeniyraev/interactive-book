@@ -21,6 +21,7 @@
             <div class="inline-actions">
               <input id="backgroundImage" type="text" readonly />
               <button data-pick="background">Pick</button>
+              <button data-clear="background" type="button">Clear</button>
             </div>
           </label>
 
@@ -40,6 +41,29 @@
           <label>
             Edge zone width (px)
             <input id="edgeZoneWidth" type="number" min="24" max="320" step="1" />
+          </label>
+
+          <label>
+            First/last page scale
+            <input id="firstLastPageScale" type="number" min="1" max="1.5" step="0.01" />
+          </label>
+
+          <label>
+            Inner page padding (px)
+            <input id="innerPagePadding" type="number" min="0" max="120" step="1" />
+          </label>
+
+          <label>
+            Side view texture
+            <div class="inline-actions">
+              <input id="sideViewTexture" type="text" readonly />
+              <button data-pick="side-view-texture">Pick</button>
+            </div>
+          </label>
+
+          <label>
+            Side view max width (px)
+            <input id="sideViewMaxWidth" type="number" min="0" max="220" step="1" />
           </label>
 
           <label>
@@ -63,7 +87,7 @@
           </label>
 
           <label>
-            Settings hold (sec)
+            Hold top-left to open settings (sec)
             <input id="settingsHoldSeconds" type="number" min="1" max="30" step="1" />
           </label>
         </div>
@@ -71,6 +95,9 @@
 
       <section>
         <h2>Content</h2>
+        <h3>Required Pages</h3>
+        <div id="fixedPagesList" class="pages-list"></div>
+
         <div class="row-actions">
           <button id="addTextPage" type="button">Add text page</button>
           <button id="addImagePage" type="button">Add image page</button>

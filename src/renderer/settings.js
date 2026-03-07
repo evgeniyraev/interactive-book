@@ -4,16 +4,28 @@ const state = {
   config: null
 };
 
+const FIXED_PAGE_META = [
+  { key: 'frontCover', label: 'Front cover' },
+  { key: 'innerFront', label: 'Front inner (required)' },
+  { key: 'innerBack', label: 'Back inner (required)' },
+  { key: 'backCover', label: 'Back cover' }
+];
+
 const els = {
   backgroundImage: document.getElementById('backgroundImage'),
   displacementMap: document.getElementById('displacementMap'),
   pageOffsetX: document.getElementById('pageOffsetX'),
   edgeZoneWidth: document.getElementById('edgeZoneWidth'),
+  firstLastPageScale: document.getElementById('firstLastPageScale'),
+  innerPagePadding: document.getElementById('innerPagePadding'),
+  sideViewTexture: document.getElementById('sideViewTexture'),
+  sideViewMaxWidth: document.getElementById('sideViewMaxWidth'),
   turnAnimationMs: document.getElementById('turnAnimationMs'),
   pageBackground: document.getElementById('pageBackground'),
   pageWidth: document.getElementById('pageWidth'),
   pageHeight: document.getElementById('pageHeight'),
   settingsHoldSeconds: document.getElementById('settingsHoldSeconds'),
+  fixedPagesList: document.getElementById('fixedPagesList'),
   pagesList: document.getElementById('pagesList'),
   dropImagesZone: document.getElementById('dropImagesZone'),
   updatePolicy: document.getElementById('updatePolicy'),
@@ -38,18 +50,45 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function normalizePage(rawPage) {
+function normalizePage(rawPage, fallbackText = '') {
   const hasLegacyTitle = rawPage?.type !== 'image' && rawPage?.title;
   return {
     id: rawPage?.id || createId(),
     type: rawPage?.type === 'image' ? 'image' : 'text',
-    text: String(rawPage?.text || (hasLegacyTitle ? rawPage.title : '')),
+    text: String(rawPage?.text || (hasLegacyTitle ? rawPage.title : fallbackText)),
     imagePath: String(rawPage?.imagePath || '')
   };
 }
 
-function normalizePages() {
-  state.config.content.pages = (state.config.content.pages || []).map(normalizePage);
+function hasPageData(rawPage) {
+  return Boolean(rawPage && (rawPage.imagePath || rawPage.text || rawPage.title));
+}
+
+function normalizeDesign() {
+  const design = state.config.design || {};
+  state.config.design = {
+    ...design,
+    edgeZoneWidth: Number(design.edgeZoneWidth ?? 92),
+    firstLastPageScale: Number(design.firstLastPageScale ?? design.coverScale ?? 1.14),
+    innerPagePadding: Number(design.innerPagePadding ?? 24),
+    sideViewTexture: String(design.sideViewTexture || ''),
+    sideViewMaxWidth: Number(design.sideViewMaxWidth ?? 68)
+  };
+}
+
+function normalizeContent() {
+  const content = state.config.content || {};
+  const legacyCovers = content.covers || {};
+  const frontSource = hasPageData(content.frontCover) ? content.frontCover : legacyCovers.front;
+  const backSource = hasPageData(content.backCover) ? content.backCover : legacyCovers.back;
+
+  state.config.content = {
+    pages: (content.pages || []).map((page) => normalizePage(page)),
+    frontCover: normalizePage(frontSource, 'Book Title'),
+    innerFront: normalizePage(content.innerFront, ''),
+    innerBack: normalizePage(content.innerBack, ''),
+    backCover: normalizePage(backSource, '')
+  };
 }
 
 function readPrimitiveInputs() {
@@ -57,6 +96,10 @@ function readPrimitiveInputs() {
   state.config.design.displacementMap = els.displacementMap.value.trim();
   state.config.design.pageOffsetX = Number(els.pageOffsetX.value || 0);
   state.config.design.edgeZoneWidth = Number(els.edgeZoneWidth.value || 92);
+  state.config.design.firstLastPageScale = Number(els.firstLastPageScale.value || 1.14);
+  state.config.design.innerPagePadding = Number(els.innerPagePadding.value || 24);
+  state.config.design.sideViewTexture = els.sideViewTexture.value.trim();
+  state.config.design.sideViewMaxWidth = Number(els.sideViewMaxWidth.value || 68);
   state.config.design.turnAnimationMs = Number(els.turnAnimationMs.value || 700);
   state.config.design.page.background = els.pageBackground.value || '#ffffff';
   state.config.design.page.width = Number(els.pageWidth.value || 900);
@@ -73,6 +116,10 @@ function writePrimitiveInputs() {
   els.displacementMap.value = state.config.design.displacementMap || '';
   els.pageOffsetX.value = String(state.config.design.pageOffsetX ?? 0);
   els.edgeZoneWidth.value = String(state.config.design.edgeZoneWidth ?? 92);
+  els.firstLastPageScale.value = String(state.config.design.firstLastPageScale ?? 1.14);
+  els.innerPagePadding.value = String(state.config.design.innerPagePadding ?? 24);
+  els.sideViewTexture.value = state.config.design.sideViewTexture || '';
+  els.sideViewMaxWidth.value = String(state.config.design.sideViewMaxWidth ?? 68);
   els.turnAnimationMs.value = String(state.config.design.turnAnimationMs ?? 700);
   els.pageBackground.value = state.config.design.page.background || '#ffffff';
   els.pageWidth.value = String(state.config.design.page.width ?? 900);
@@ -84,12 +131,12 @@ function writePrimitiveInputs() {
   els.autoCheckOnLaunch.checked = Boolean(state.config.autoupdate.autoCheckOnLaunch);
 }
 
-function createPageCard(page, index) {
+function createPageCard(page, label, options = {}) {
   const card = document.createElement('div');
   card.className = 'page-card';
 
-  const typeBadge = document.createElement('strong');
-  typeBadge.textContent = page.type === 'image' ? `Image page #${index + 1}` : `Text page #${index + 1}`;
+  const title = document.createElement('strong');
+  title.textContent = label;
 
   const body = document.createElement(page.type === 'text' ? 'textarea' : 'input');
   if (page.type === 'text') {
@@ -107,55 +154,69 @@ function createPageCard(page, index) {
   const actions = document.createElement('div');
   actions.className = 'page-actions';
 
-  const upBtn = document.createElement('button');
-  upBtn.textContent = 'Move up';
-  upBtn.type = 'button';
-  upBtn.disabled = index === 0;
-  upBtn.addEventListener('click', () => {
-    movePage(index, -1);
-  });
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.textContent = page.type === 'text' ? 'Switch to image' : 'Switch to text';
+  toggleBtn.addEventListener('click', async () => {
+    if (page.type === 'text') {
+      page.type = 'image';
+      page.imagePath = '';
+      setStatus('Page switched to image. Choose image to display.');
+    } else {
+      page.type = 'text';
+      page.text = page.text || '';
+    }
 
-  const downBtn = document.createElement('button');
-  downBtn.textContent = 'Move down';
-  downBtn.type = 'button';
-  downBtn.disabled = index === state.config.content.pages.length - 1;
-  downBtn.addEventListener('click', () => {
-    movePage(index, 1);
+    options.onRefresh?.();
   });
-
-  const removeBtn = document.createElement('button');
-  removeBtn.textContent = 'Remove';
-  removeBtn.type = 'button';
-  removeBtn.addEventListener('click', () => {
-    state.config.content.pages.splice(index, 1);
-    renderPages();
-  });
-
-  actions.append(upBtn, downBtn, removeBtn);
+  actions.append(toggleBtn);
 
   if (page.type === 'image') {
-    const replaceBtn = document.createElement('button');
-    replaceBtn.textContent = 'Replace image';
-    replaceBtn.type = 'button';
-    replaceBtn.addEventListener('click', async () => {
+    const pickBtn = document.createElement('button');
+    pickBtn.type = 'button';
+    pickBtn.textContent = 'Choose image';
+    pickBtn.addEventListener('click', async () => {
       const result = await window.bookApi.pickAsset('image');
       if (!result.canceled) {
         page.imagePath = result.relativePath;
-        renderPages();
+        options.onRefresh?.();
       }
     });
-    actions.append(replaceBtn);
+    actions.append(pickBtn);
   }
 
-  card.append(typeBadge, body, actions);
-  return card;
-}
+  if (options.allowMove) {
+    const upBtn = document.createElement('button');
+    upBtn.textContent = 'Move up';
+    upBtn.type = 'button';
+    upBtn.disabled = options.index === 0;
+    upBtn.addEventListener('click', () => {
+      options.onMove?.(options.index, -1);
+    });
 
-function renderPages() {
-  els.pagesList.innerHTML = '';
-  state.config.content.pages.forEach((page, index) => {
-    els.pagesList.append(createPageCard(page, index));
-  });
+    const downBtn = document.createElement('button');
+    downBtn.textContent = 'Move down';
+    downBtn.type = 'button';
+    downBtn.disabled = options.index === options.maxIndex;
+    downBtn.addEventListener('click', () => {
+      options.onMove?.(options.index, 1);
+    });
+
+    actions.append(upBtn, downBtn);
+  }
+
+  if (options.allowRemove) {
+    const removeBtn = document.createElement('button');
+    removeBtn.textContent = 'Remove';
+    removeBtn.type = 'button';
+    removeBtn.addEventListener('click', () => {
+      options.onRemove?.(options.index);
+    });
+    actions.append(removeBtn);
+  }
+
+  card.append(title, body, actions);
+  return card;
 }
 
 function movePage(index, direction) {
@@ -167,6 +228,41 @@ function movePage(index, direction) {
   const [page] = state.config.content.pages.splice(index, 1);
   state.config.content.pages.splice(target, 0, page);
   renderPages();
+}
+
+function renderFixedPages() {
+  els.fixedPagesList.innerHTML = '';
+
+  for (const meta of FIXED_PAGE_META) {
+    const page = state.config.content[meta.key];
+    els.fixedPagesList.append(
+      createPageCard(page, meta.label, {
+        allowMove: false,
+        allowRemove: false,
+        onRefresh: renderFixedPages
+      })
+    );
+  }
+}
+
+function renderPages() {
+  els.pagesList.innerHTML = '';
+  state.config.content.pages.forEach((page, index) => {
+    els.pagesList.append(
+      createPageCard(page, `Page #${index + 1}`, {
+        allowMove: true,
+        allowRemove: true,
+        index,
+        maxIndex: state.config.content.pages.length - 1,
+        onRefresh: renderPages,
+        onMove: movePage,
+        onRemove: (removeIndex) => {
+          state.config.content.pages.splice(removeIndex, 1);
+          renderPages();
+        }
+      })
+    );
+  });
 }
 
 function appendImagePages(assetPaths) {
@@ -218,18 +314,25 @@ async function importImagesFromFiles(files) {
 
 async function loadConfig() {
   state.config = clone(await window.bookApi.getConfig());
-  normalizePages();
+  normalizeDesign();
+  normalizeContent();
   writePrimitiveInputs();
+  renderFixedPages();
   renderPages();
 }
 
 async function saveConfig() {
   readPrimitiveInputs();
-  normalizePages();
+  normalizeDesign();
+  normalizeContent();
+
   const updated = await window.bookApi.setConfig(state.config);
   state.config = clone(updated);
-  normalizePages();
+  normalizeDesign();
+  normalizeContent();
+
   writePrimitiveInputs();
+  renderFixedPages();
   renderPages();
   setStatus('Settings saved.');
 }
@@ -248,6 +351,11 @@ async function pickAssetAndAssign(kind) {
   if (kind === 'displacement-map') {
     state.config.design.displacementMap = result.relativePath;
     els.displacementMap.value = result.relativePath;
+  }
+
+  if (kind === 'side-view-texture') {
+    state.config.design.sideViewTexture = result.relativePath;
+    els.sideViewTexture.value = result.relativePath;
   }
 }
 
@@ -280,7 +388,6 @@ function bindDropZone() {
 
   filePicker.addEventListener('change', async () => {
     await importImagesFromFiles(filePicker.files || []);
-
     filePicker.value = '';
   });
 
@@ -300,7 +407,6 @@ function bindDropZone() {
   els.dropImagesZone.addEventListener('drop', async (event) => {
     event.preventDefault();
     els.dropImagesZone.classList.remove('active');
-
     await importImagesFromFiles(event.dataTransfer?.files || []);
   });
 }
@@ -309,6 +415,16 @@ function bindEvents() {
   document.querySelectorAll('[data-pick]').forEach((button) => {
     button.addEventListener('click', async () => {
       await pickAssetAndAssign(button.dataset.pick);
+    });
+  });
+
+  document.querySelectorAll('[data-clear]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (button.dataset.clear === 'background') {
+        state.config.design.backgroundImage = '';
+        els.backgroundImage.value = '';
+        setStatus('Background image cleared. Save to apply.');
+      }
     });
   });
 

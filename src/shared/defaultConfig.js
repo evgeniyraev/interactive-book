@@ -9,6 +9,15 @@ function createDefaultPage(text = 'Welcome to your interactive book.') {
   };
 }
 
+function createDefaultSpecialPage(text) {
+  return {
+    id: randomUUID(),
+    type: 'text',
+    text,
+    imagePath: ''
+  };
+}
+
 const defaultConfig = {
   mode: {
     settingsHoldSeconds: 10
@@ -18,6 +27,10 @@ const defaultConfig = {
     displacementMap: '',
     pageOffsetX: 0,
     edgeZoneWidth: 92,
+    firstLastPageScale: 1.14,
+    innerPagePadding: 24,
+    sideViewTexture: '',
+    sideViewMaxWidth: 68,
     turnAnimationMs: 700,
     page: {
       background: '#ffffff',
@@ -26,6 +39,10 @@ const defaultConfig = {
     }
   },
   content: {
+    frontCover: createDefaultSpecialPage('Book Title'),
+    innerFront: createDefaultSpecialPage(''),
+    innerBack: createDefaultSpecialPage(''),
+    backCover: createDefaultSpecialPage(''),
     pages: [createDefaultPage()]
   },
   autoupdate: {

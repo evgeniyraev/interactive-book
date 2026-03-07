@@ -3,6 +3,12 @@
 const state = {
   config: null,
   pages: [],
+  special: {
+    frontCover: null,
+    innerFront: null,
+    innerBack: null,
+    backCover: null
+  },
   spreads: [],
   spreadIndex: 0,
   flip: null,
@@ -15,6 +21,10 @@ const state = {
 const elements = {
   stage: document.getElementById('book-stage'),
   shell: document.getElementById('book-shell'),
+  sideLeftStack: document.getElementById('side-left-stack'),
+  sideRightStack: document.getElementById('side-right-stack'),
+  baseLeft: document.getElementById('base-left'),
+  baseRight: document.getElementById('base-right'),
   staticLeft: document.getElementById('static-left'),
   staticRight: document.getElementById('static-right'),
   underLeft: document.getElementById('under-left'),
@@ -49,6 +59,21 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+function normalizeBookPage(rawPage, fallbackText = '') {
+  const type = rawPage?.type === 'image' ? 'image' : 'text';
+  const text = rawPage?.text || rawPage?.title || fallbackText;
+
+  return {
+    type,
+    text: String(text || ''),
+    imagePath: String(rawPage?.imagePath || '')
+  };
+}
+
+function hasPageData(rawPage) {
+  return Boolean(rawPage && (rawPage.imagePath || rawPage.text || rawPage.title));
+}
+
 function pageAt(index) {
   if (typeof index !== 'number' || index < 0 || index >= state.pages.length) {
     return null;
@@ -70,6 +95,25 @@ function getEdgeZoneWidth() {
   return clamp(Number.isFinite(value) ? value : 92, 24, 320);
 }
 
+function getFirstLastPageScale() {
+  const value = Number(state.config?.design?.firstLastPageScale ?? state.config?.design?.coverScale);
+  return clamp(Number.isFinite(value) ? value : 1.14, 1, 1.5);
+}
+
+function getInnerPagePadding() {
+  const value = Number(state.config?.design?.innerPagePadding);
+  return clamp(Number.isFinite(value) ? value : 24, 0, 120);
+}
+
+function getSideViewMaxWidth() {
+  const value = Number(state.config?.design?.sideViewMaxWidth);
+  return clamp(Number.isFinite(value) ? value : 68, 0, 220);
+}
+
+function isCoverSlot(slot) {
+  return slot?.kind === 'front-cover' || slot?.kind === 'back-cover';
+}
+
 function getSpreadShift(spread) {
   const base = getBaseOffset();
   const pageWidth = getPageWidth();
@@ -78,58 +122,114 @@ function getSpreadShift(spread) {
     return base;
   }
 
-  if (spread.leftIndex == null && spread.rightIndex != null) {
+  if (spread.leftSlot == null && spread.rightSlot != null) {
     return base - pageWidth / 2;
   }
 
-  if (spread.rightIndex == null && spread.leftIndex != null) {
+  if (spread.rightSlot == null && spread.leftSlot != null) {
     return base + pageWidth / 2;
   }
 
   return base;
 }
 
+function getSpreadScale(spread) {
+  if (!spread) {
+    return 1;
+  }
+
+  const singleSlot = spread.leftSlot || spread.rightSlot;
+  if ((spread.leftSlot == null || spread.rightSlot == null) && isCoverSlot(singleSlot)) {
+    return getFirstLastPageScale();
+  }
+
+  return 1;
+}
+
 function isSingleSpread(spread) {
   return Boolean(
-    spread &&
-      ((spread.leftIndex == null && spread.rightIndex != null) ||
-        (spread.rightIndex == null && spread.leftIndex != null))
+    spread && ((spread.leftSlot == null && spread.rightSlot != null) || (spread.rightSlot == null && spread.leftSlot != null))
   );
 }
 
-function setShellShift(shift) {
-  elements.shell.style.transform = `translateX(${shift}px)`;
+function getOpenStateByIndex(index) {
+  const lastIndex = Math.max(0, state.spreads.length - 1);
+  if (index <= 0 || index >= lastIndex) {
+    return { factor: 0, progress: 0 };
+  }
+
+  const innerStart = 1;
+  const innerEnd = Math.max(innerStart, lastIndex - 1);
+  const innerRange = Math.max(1, innerEnd - innerStart);
+  const progress = clamp((index - innerStart) / innerRange, 0, 1);
+  return { factor: 1, progress };
+}
+
+function sideWidthsForState(openState) {
+  const maxWidth = Math.min(getSideViewMaxWidth(), getInnerPagePadding());
+  const factor = openState.factor;
+  const progress = openState.progress;
+  return {
+    left: maxWidth * factor * progress,
+    right: maxWidth * factor * (1 - progress)
+  };
+}
+
+function stackShiftForState(openState) {
+  const widths = sideWidthsForState(openState);
+  return (widths.left - widths.right) / 2;
+}
+
+function setSideStackWidths(openState) {
+  const widths = sideWidthsForState(openState);
+  elements.sideLeftStack.style.width = `${widths.left}px`;
+  elements.sideRightStack.style.width = `${widths.right}px`;
+  elements.sideLeftStack.classList.toggle('hidden', widths.left <= 0.25);
+  elements.sideRightStack.classList.toggle('hidden', widths.right <= 0.25);
+}
+
+function setShellTransform(shift, scale = 1) {
+  elements.shell.style.transform = `translateX(${shift}px) scale(${scale})`;
 }
 
 function buildSpreads() {
-  const total = state.pages.length;
-
-  if (total === 0) {
-    return [{ leftIndex: null, rightIndex: null }];
-  }
-
-  if (total === 1) {
-    return [{ leftIndex: null, rightIndex: 0 }];
-  }
-
   const spreads = [];
-  spreads.push({ leftIndex: null, rightIndex: 0 });
 
-  let middleIndex = 1;
-  const middleEnd = total - 2;
-  while (middleIndex <= middleEnd) {
-    const leftIndex = middleIndex;
-    const rightIndex = middleIndex + 1 <= middleEnd ? middleIndex + 1 : null;
-    spreads.push({ leftIndex, rightIndex });
-    middleIndex += 2;
+  spreads.push({ leftSlot: null, rightSlot: { kind: 'front-cover' } });
+
+  const contentSequence = [];
+  for (let i = 0; i < state.pages.length; i += 1) {
+    contentSequence.push({ kind: 'content', index: i });
   }
 
-  spreads.push({ leftIndex: total - 1, rightIndex: null });
+  if (contentSequence.length === 0) {
+    spreads.push({ leftSlot: { kind: 'inner-front' }, rightSlot: { kind: 'inner-back' } });
+    spreads.push({ leftSlot: { kind: 'back-cover' }, rightSlot: null });
+    return spreads;
+  }
+
+  spreads.push({ leftSlot: { kind: 'inner-front' }, rightSlot: contentSequence[0] });
+
+  for (let i = 1; i < contentSequence.length; i += 2) {
+    spreads.push({
+      leftSlot: contentSequence[i],
+      rightSlot: contentSequence[i + 1] ?? { kind: 'inner-back' }
+    });
+  }
+
+  if (contentSequence.length % 2 === 1) {
+    spreads.push({ leftSlot: { kind: 'inner-back' }, rightSlot: { kind: 'back-cover' } });
+    spreads.push({ leftSlot: { kind: 'back-cover' }, rightSlot: null });
+    return spreads;
+  }
+
+  spreads.push({ leftSlot: { kind: 'back-cover' }, rightSlot: null });
+
   return spreads;
 }
 
 function currentSpread() {
-  return state.spreads[state.spreadIndex] || { leftIndex: null, rightIndex: null };
+  return state.spreads[state.spreadIndex] || { leftSlot: null, rightSlot: null };
 }
 
 function targetSpread(step) {
@@ -150,29 +250,59 @@ async function resolveAssetUrl(relativePath) {
   return url;
 }
 
-async function buildPageMarkup(page, pageBackground) {
-  if (!page) {
+function pageForSlot(slot) {
+  if (!slot) {
+    return null;
+  }
+
+  if (slot.kind === 'content') {
+    return pageAt(slot.index);
+  }
+
+  if (slot.kind === 'front-cover') {
+    return state.special.frontCover;
+  }
+
+  if (slot.kind === 'inner-front') {
+    return state.special.innerFront;
+  }
+
+  if (slot.kind === 'inner-back') {
+    return state.special.innerBack;
+  }
+
+  if (slot.kind === 'back-cover') {
+    return state.special.backCover;
+  }
+
+  return null;
+}
+
+async function buildSlotMarkup(slot) {
+  if (!slot) {
     return '<div class="page-content text"></div>';
   }
+
+  const page = normalizeBookPage(pageForSlot(slot));
 
   if (page.type === 'image' && page.imagePath) {
     const src = await resolveAssetUrl(page.imagePath);
     return `<div class="page-content image"><img alt="Book page" src="${src}" draggable="false" /></div>`;
   }
 
-  const text = escapeHtml(page.text || page.title || '');
-  return `<div class="page-content text" style="background:${escapeHtml(pageBackground)}">${text}</div>`;
+  const isCover = isCoverSlot(slot);
+  const className = isCover ? 'page-content text cover' : 'page-content text';
+  return `<div class="${className}">${escapeHtml(page.text || '')}</div>`;
 }
 
-async function renderPage(element, pageIndex) {
-  const page = pageAt(pageIndex);
-  const pageBackground = state.config.design.page.background;
-  element.style.background = pageBackground;
-  element.innerHTML = await buildPageMarkup(page, pageBackground);
+async function renderSlot(element, slot) {
+  const background = state.config.design.page.background;
+  element.style.background = background;
+  element.innerHTML = await buildSlotMarkup(slot);
 }
 
-function showElementIfPage(element, pageIndex) {
-  if (pageIndex == null) {
+function showElementIfSlot(element, slot) {
+  if (slot == null) {
     element.classList.add('hidden');
   } else {
     element.classList.remove('hidden');
@@ -190,15 +320,15 @@ function getVisiblePageEdges(spread) {
   const rect = elements.shell.getBoundingClientRect();
   const half = rect.width / 2;
 
-  if (!spread || (spread.leftIndex == null && spread.rightIndex == null)) {
+  if (!spread || (spread.leftSlot == null && spread.rightSlot == null)) {
     return null;
   }
 
-  if (spread.leftIndex == null && spread.rightIndex != null) {
+  if (spread.leftSlot == null && spread.rightSlot != null) {
     return { left: rect.left + half, right: rect.right, top: rect.top, height: rect.height };
   }
 
-  if (spread.rightIndex == null && spread.leftIndex != null) {
+  if (spread.rightSlot == null && spread.leftSlot != null) {
     return { left: rect.left, right: rect.left + half, top: rect.top, height: rect.height };
   }
 
@@ -234,16 +364,39 @@ function positionEdgeZones() {
   elements.edgeNextZone.disabled = state.spreadIndex >= state.spreads.length - 1;
 }
 
-async function renderStaticSpread() {
-  const spread = currentSpread();
-
+async function renderBasePages(openState) {
   await Promise.all([
-    renderPage(elements.staticLeft, spread.leftIndex),
-    renderPage(elements.staticRight, spread.rightIndex)
+    renderSlot(elements.baseLeft, { kind: 'inner-front' }),
+    renderSlot(elements.baseRight, { kind: 'inner-back' })
   ]);
 
-  showElementIfPage(elements.staticLeft, spread.leftIndex);
-  showElementIfPage(elements.staticRight, spread.rightIndex);
+  const show = openState.factor > 0.001;
+  if (!show) {
+    elements.baseLeft.classList.add('hidden');
+  } else {
+    elements.baseLeft.classList.remove('hidden');
+  }
+
+  if (!show) {
+    elements.baseRight.classList.add('hidden');
+  } else {
+    elements.baseRight.classList.remove('hidden');
+  }
+}
+
+async function renderStaticSpread() {
+  const spread = currentSpread();
+  const openState = getOpenStateByIndex(state.spreadIndex);
+
+  await Promise.all([
+    renderSlot(elements.staticLeft, spread.leftSlot),
+    renderSlot(elements.staticRight, spread.rightSlot)
+  ]);
+
+  await renderBasePages(openState);
+
+  showElementIfSlot(elements.staticLeft, spread.leftSlot);
+  showElementIfSlot(elements.staticRight, spread.rightSlot);
 
   elements.underLeft.classList.add('hidden');
   elements.underRight.classList.add('hidden');
@@ -254,8 +407,11 @@ async function renderStaticSpread() {
   elements.sheetShadow.style.opacity = '0';
   elements.sheetHighlight.style.opacity = '0';
 
+  const fullShift = getSpreadShift(spread) + stackShiftForState(openState);
+
   elements.shell.classList.toggle('single-view', isSingleSpread(spread));
-  setShellShift(getSpreadShift(spread));
+  setShellTransform(fullShift, getSpreadScale(spread));
+  setSideStackWidths(openState);
   positionEdgeZones();
 }
 
@@ -263,6 +419,7 @@ async function applyDesign() {
   const { design } = state.config;
   const backgroundUrl = await resolveAssetUrl(design.backgroundImage);
   const mapUrl = await resolveAssetUrl(design.displacementMap);
+  const sideTextureUrl = await resolveAssetUrl(design.sideViewTexture || '');
 
   elements.backgroundLayer.style.backgroundImage = backgroundUrl ? `url("${backgroundUrl}")` : 'none';
 
@@ -271,6 +428,10 @@ async function applyDesign() {
 
   elements.shell.style.width = `${pageWidth * 2}px`;
   elements.shell.style.height = `${pageHeight}px`;
+
+  const stackTexture = sideTextureUrl ? `url("${sideTextureUrl}")` : 'linear-gradient(90deg, #c8b79b, #bca88a, #d6c8ad)';
+  elements.sideLeftStack.style.backgroundImage = stackTexture;
+  elements.sideRightStack.style.backgroundImage = stackTexture;
 
   const displacementScale = mapUrl ? 18 : 0;
   elements.stage.style.filter = mapUrl ? 'url(#book-displacement-filter)' : 'none';
@@ -282,36 +443,42 @@ async function applyDesign() {
 
   const holdMs = Math.max(1, Number(state.config.mode.settingsHoldSeconds) || 10) * 1000;
   elements.touchZone.dataset.holdDuration = String(holdMs);
+
   document.documentElement.style.setProperty('--edge-zone-width', `${getEdgeZoneWidth()}px`);
-  positionEdgeZones();
+  document.documentElement.style.setProperty('--inner-page-padding', `${getInnerPagePadding()}px`);
 }
 
 function computeFlipFromStep(step, current, target) {
-  const frontIndex =
+  const frontSlot =
     step > 0
-      ? (current.rightIndex ?? current.leftIndex)
-      : (current.leftIndex ?? current.rightIndex);
+      ? (current.rightSlot ?? current.leftSlot)
+      : (current.leftSlot ?? current.rightSlot);
 
-  const frontSide = current.rightIndex === frontIndex ? 'right' : 'left';
+  const frontSide = current.rightSlot === frontSlot ? 'right' : 'left';
 
-  const backIndex = frontSide === 'right' ? target.leftIndex : target.rightIndex;
-  const underIndex = frontSide === 'right' ? target.rightIndex : target.leftIndex;
+  const backSlot = frontSide === 'right' ? target.leftSlot : target.rightSlot;
+  const underSlot = frontSide === 'right' ? target.rightSlot : target.leftSlot;
+
+  const sourceOpenState = getOpenStateByIndex(state.spreadIndex);
+  const targetOpenState = getOpenStateByIndex(state.spreadIndex + step);
 
   return {
-    step,
-    frontIndex,
-    backIndex,
-    underIndex,
+    frontSlot,
+    backSlot,
+    underSlot,
     frontSide,
     visualDirection: frontSide === 'right' ? 'forward' : 'backward',
     progress: 0,
     dragging: false,
     pointerId: null,
     shellRect: elements.shell.getBoundingClientRect(),
-    sourceSpreadIndex: state.spreadIndex,
     targetSpreadIndex: state.spreadIndex + step,
-    sourceShift: getSpreadShift(current),
-    targetShift: getSpreadShift(target)
+    sourceShift: getSpreadShift(current) + stackShiftForState(sourceOpenState),
+    targetShift: getSpreadShift(target) + stackShiftForState(targetOpenState),
+    sourceScale: getSpreadScale(current),
+    targetScale: getSpreadScale(target),
+    sourceOpenState,
+    targetOpenState
   };
 }
 
@@ -334,10 +501,16 @@ async function prepareFlip(step) {
   const flip = computeFlipFromStep(step, current, target);
 
   await Promise.all([
-    renderPage(elements.flipFront, flip.frontIndex),
-    renderPage(elements.flipBack, flip.backIndex),
-    renderPage(flip.frontSide === 'right' ? elements.underRight : elements.underLeft, flip.underIndex)
+    renderSlot(elements.flipFront, flip.frontSlot),
+    renderSlot(elements.flipBack, flip.backSlot),
+    renderSlot(flip.frontSide === 'right' ? elements.underRight : elements.underLeft, flip.underSlot)
   ]);
+
+  await renderBasePages(flip.sourceOpenState);
+  if (flip.sourceOpenState.factor !== flip.targetOpenState.factor) {
+    elements.baseLeft.classList.add('hidden');
+    elements.baseRight.classList.add('hidden');
+  }
 
   if (flip.frontSide === 'right') {
     elements.staticRight.classList.add('hidden');
@@ -349,7 +522,7 @@ async function prepareFlip(step) {
     elements.underRight.classList.add('hidden');
   }
 
-  showElementIfPage(flip.frontSide === 'right' ? elements.underRight : elements.underLeft, flip.underIndex);
+  showElementIfSlot(flip.frontSide === 'right' ? elements.underRight : elements.underLeft, flip.underSlot);
 
   elements.flipSheet.classList.remove('hidden');
   elements.flipSheet.classList.remove('forward', 'backward');
@@ -380,7 +553,25 @@ function applyFlipProgress(progress) {
   elements.sheetShadow.style.opacity = `${0.14 + bend * 0.62}`;
   elements.sheetHighlight.style.opacity = `${0.08 + bend * 0.36}`;
 
-  setShellShift(lerp(state.flip.sourceShift, state.flip.targetShift, state.flip.progress));
+  setShellTransform(
+    lerp(state.flip.sourceShift, state.flip.targetShift, state.flip.progress),
+    lerp(state.flip.sourceScale, state.flip.targetScale, state.flip.progress)
+  );
+
+  const openState = {
+    factor: lerp(state.flip.sourceOpenState.factor, state.flip.targetOpenState.factor, state.flip.progress),
+    progress: lerp(state.flip.sourceOpenState.progress, state.flip.targetOpenState.progress, state.flip.progress)
+  };
+
+  setSideStackWidths(openState);
+  const transitioningWithClosed = state.flip.sourceOpenState.factor !== state.flip.targetOpenState.factor;
+  if (transitioningWithClosed) {
+    elements.baseLeft.classList.add('hidden');
+    elements.baseRight.classList.add('hidden');
+  } else {
+    elements.baseLeft.classList.toggle('hidden', openState.factor <= 0.001);
+    elements.baseRight.classList.toggle('hidden', openState.factor <= 0.001);
+  }
 }
 
 async function finishFlip(commit) {
@@ -560,12 +751,27 @@ function setupTouchOpenSettings() {
   elements.touchZone.addEventListener('pointercancel', cancelHold);
 }
 
+function resolveSpecialPages(config) {
+  const content = config.content || {};
+  const legacyCovers = content.covers || {};
+  const frontSource = hasPageData(content.frontCover) ? content.frontCover : legacyCovers.front;
+  const backSource = hasPageData(content.backCover) ? content.backCover : legacyCovers.back;
+
+  return {
+    frontCover: normalizeBookPage(frontSource, 'Book Title'),
+    innerFront: normalizeBookPage(content.innerFront, ''),
+    innerBack: normalizeBookPage(content.innerBack, ''),
+    backCover: normalizeBookPage(backSource, '')
+  };
+}
+
 async function reloadFromConfig() {
   stopActiveAnimation();
   state.resolvedAssetCache.clear();
 
   state.config = await window.bookApi.getConfig();
-  state.pages = state.config.content.pages || [];
+  state.pages = (state.config.content?.pages || []).map((page) => normalizeBookPage(page));
+  state.special = resolveSpecialPages(state.config);
   state.spreads = buildSpreads();
 
   const maxSpread = state.spreads.length - 1;
@@ -615,10 +821,6 @@ function setupEvents() {
 
   window.bookApi.onContentUpdated(() => {
     reloadFromConfig();
-  });
-
-  window.bookApi.onUpdateDownloaded((payload) => {
-    console.info(`Update ${payload.version} downloaded. Open settings to install.`);
   });
 }
 
