@@ -8,6 +8,7 @@ const els = {
   backgroundImage: document.getElementById('backgroundImage'),
   displacementMap: document.getElementById('displacementMap'),
   pageOffsetX: document.getElementById('pageOffsetX'),
+  edgeZoneWidth: document.getElementById('edgeZoneWidth'),
   turnAnimationMs: document.getElementById('turnAnimationMs'),
   pageBackground: document.getElementById('pageBackground'),
   pageWidth: document.getElementById('pageWidth'),
@@ -55,6 +56,7 @@ function readPrimitiveInputs() {
   state.config.design.backgroundImage = els.backgroundImage.value.trim();
   state.config.design.displacementMap = els.displacementMap.value.trim();
   state.config.design.pageOffsetX = Number(els.pageOffsetX.value || 0);
+  state.config.design.edgeZoneWidth = Number(els.edgeZoneWidth.value || 92);
   state.config.design.turnAnimationMs = Number(els.turnAnimationMs.value || 700);
   state.config.design.page.background = els.pageBackground.value || '#ffffff';
   state.config.design.page.width = Number(els.pageWidth.value || 900);
@@ -70,6 +72,7 @@ function writePrimitiveInputs() {
   els.backgroundImage.value = state.config.design.backgroundImage || '';
   els.displacementMap.value = state.config.design.displacementMap || '';
   els.pageOffsetX.value = String(state.config.design.pageOffsetX ?? 0);
+  els.edgeZoneWidth.value = String(state.config.design.edgeZoneWidth ?? 92);
   els.turnAnimationMs.value = String(state.config.design.turnAnimationMs ?? 700);
   els.pageBackground.value = state.config.design.page.background || '#ffffff';
   els.pageWidth.value = String(state.config.design.page.width ?? 900);

@@ -44,7 +44,6 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1rem;
   padding: 1rem;
   user-select: none;
 }
@@ -184,25 +183,26 @@ body {
   opacity: 0;
 }
 
-#controls {
-  display: flex;
-  gap: 0.75rem;
+.edge-zone {
+  position: fixed;
+  width: var(--edge-zone-width, 92px);
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background: linear-gradient(90deg, rgb(0 0 0 / 10%), transparent);
+  z-index: 22;
+  opacity: 0.4;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
-#controls button {
-  border: none;
-  border-radius: 999px;
-  padding: 0.65rem 1.4rem;
-  font-size: 0.95rem;
-  background: rgb(10 15 28 / 78%);
-  color: #fff;
+#edge-next-zone {
+  background: linear-gradient(270deg, rgb(0 0 0 / 10%), transparent);
 }
 
-#page-indicator {
-  min-height: 1.5rem;
-  font-size: 0.95rem;
-  letter-spacing: 0.02em;
-  text-shadow: 0 2px 6px rgb(0 0 0 / 35%);
+.edge-zone:disabled {
+  opacity: 0.15;
+  cursor: default;
 }
 
 #touch-settings-zone {

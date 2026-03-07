@@ -17,6 +17,7 @@ const defaultConfig = {
     backgroundImage: '',
     displacementMap: '',
     pageOffsetX: 0,
+    edgeZoneWidth: 92,
     turnAnimationMs: 700,
     page: {
       background: '#ffffff',

@@ -26,9 +26,8 @@ const elements = {
   sheetHighlight: document.getElementById('sheet-highlight'),
   backgroundLayer: document.getElementById('background-layer'),
   mapImage: document.getElementById('displacement-map-image'),
-  prevBtn: document.getElementById('prev-btn'),
-  nextBtn: document.getElementById('next-btn'),
-  indicator: document.getElementById('page-indicator'),
+  edgePrevZone: document.getElementById('edge-prev-zone'),
+  edgeNextZone: document.getElementById('edge-next-zone'),
   touchZone: document.getElementById('touch-settings-zone')
 };
 
@@ -64,6 +63,11 @@ function getPageWidth() {
 
 function getBaseOffset() {
   return Number(state.config?.design?.pageOffsetX) || 0;
+}
+
+function getEdgeZoneWidth() {
+  const value = Number(state.config?.design?.edgeZoneWidth);
+  return clamp(Number.isFinite(value) ? value : 92, 24, 320);
 }
 
 function getSpreadShift(spread) {
@@ -182,13 +186,52 @@ function stopActiveAnimation() {
   }
 }
 
-function updateIndicator() {
-  const spread = currentSpread();
-  const left = spread.leftIndex != null ? spread.leftIndex + 1 : null;
-  const right = spread.rightIndex != null ? spread.rightIndex + 1 : null;
-  const spreadLabel = left && right ? `${left}-${right}` : left || right || 'none';
+function getVisiblePageEdges(spread) {
+  const rect = elements.shell.getBoundingClientRect();
+  const half = rect.width / 2;
 
-  elements.indicator.textContent = `View ${state.spreadIndex + 1}/${state.spreads.length} • Pages ${spreadLabel}/${state.pages.length}`;
+  if (!spread || (spread.leftIndex == null && spread.rightIndex == null)) {
+    return null;
+  }
+
+  if (spread.leftIndex == null && spread.rightIndex != null) {
+    return { left: rect.left + half, right: rect.right, top: rect.top, height: rect.height };
+  }
+
+  if (spread.rightIndex == null && spread.leftIndex != null) {
+    return { left: rect.left, right: rect.left + half, top: rect.top, height: rect.height };
+  }
+
+  return { left: rect.left, right: rect.right, top: rect.top, height: rect.height };
+}
+
+function positionEdgeZones() {
+  const spread = currentSpread();
+  const edges = getVisiblePageEdges(spread);
+  const zoneWidth = getEdgeZoneWidth();
+
+  if (!edges || state.flip) {
+    elements.edgePrevZone.classList.add('hidden');
+    elements.edgeNextZone.classList.add('hidden');
+    return;
+  }
+
+  const prevLeft = clamp(edges.left, 0, Math.max(0, window.innerWidth - zoneWidth));
+  const nextLeft = clamp(edges.right - zoneWidth, 0, Math.max(0, window.innerWidth - zoneWidth));
+
+  elements.edgePrevZone.style.left = `${prevLeft}px`;
+  elements.edgePrevZone.style.top = `${edges.top}px`;
+  elements.edgePrevZone.style.height = `${edges.height}px`;
+
+  elements.edgeNextZone.style.left = `${nextLeft}px`;
+  elements.edgeNextZone.style.top = `${edges.top}px`;
+  elements.edgeNextZone.style.height = `${edges.height}px`;
+
+  elements.edgePrevZone.classList.remove('hidden');
+  elements.edgeNextZone.classList.remove('hidden');
+
+  elements.edgePrevZone.disabled = state.spreadIndex <= 0;
+  elements.edgeNextZone.disabled = state.spreadIndex >= state.spreads.length - 1;
 }
 
 async function renderStaticSpread() {
@@ -213,7 +256,7 @@ async function renderStaticSpread() {
 
   elements.shell.classList.toggle('single-view', isSingleSpread(spread));
   setShellShift(getSpreadShift(spread));
-  updateIndicator();
+  positionEdgeZones();
 }
 
 async function applyDesign() {
@@ -239,6 +282,8 @@ async function applyDesign() {
 
   const holdMs = Math.max(1, Number(state.config.mode.settingsHoldSeconds) || 10) * 1000;
   elements.touchZone.dataset.holdDuration = String(holdMs);
+  document.documentElement.style.setProperty('--edge-zone-width', `${getEdgeZoneWidth()}px`);
+  positionEdgeZones();
 }
 
 function computeFlipFromStep(step, current, target) {
@@ -310,6 +355,8 @@ async function prepareFlip(step) {
   elements.flipSheet.classList.remove('forward', 'backward');
   elements.flipSheet.classList.add(flip.visualDirection);
   elements.shell.classList.toggle('single-view', isSingleSpread(current));
+  elements.edgePrevZone.classList.add('hidden');
+  elements.edgeNextZone.classList.add('hidden');
 
   state.flip = flip;
   applyFlipProgress(0);
@@ -538,11 +585,11 @@ async function triggerStep(step) {
 }
 
 function setupEvents() {
-  elements.nextBtn.addEventListener('click', () => {
+  elements.edgeNextZone.addEventListener('click', () => {
     triggerStep(1);
   });
 
-  elements.prevBtn.addEventListener('click', () => {
+  elements.edgePrevZone.addEventListener('click', () => {
     triggerStep(-1);
   });
 
@@ -562,12 +609,16 @@ function setupEvents() {
     }
   });
 
+  window.addEventListener('resize', () => {
+    positionEdgeZones();
+  });
+
   window.bookApi.onContentUpdated(() => {
     reloadFromConfig();
   });
 
   window.bookApi.onUpdateDownloaded((payload) => {
-    elements.indicator.textContent = `Update ${payload.version} downloaded. Open settings to install.`;
+    console.info(`Update ${payload.version} downloaded. Open settings to install.`);
   });
 }
 
