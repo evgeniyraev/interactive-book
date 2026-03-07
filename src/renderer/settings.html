@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Interactive Book Settings</title>
+    <link rel="stylesheet" href="./settings.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Interactive Book Settings</h1>
+      <p>Design, content, and update controls.</p>
+    </header>
+
+    <main>
+      <section>
+        <h2>Design</h2>
+        <div class="field-grid">
+          <label>
+            Background image
+            <div class="inline-actions">
+              <input id="backgroundImage" type="text" readonly />
+              <button data-pick="background">Pick</button>
+            </div>
+          </label>
+
+          <label>
+            Displacement map
+            <div class="inline-actions">
+              <input id="displacementMap" type="text" readonly />
+              <button data-pick="displacement-map">Pick</button>
+            </div>
+          </label>
+
+          <label>
+            Page offset X (px)
+            <input id="pageOffsetX" type="number" step="1" />
+          </label>
+
+          <label>
+            Turn animation (ms)
+            <input id="turnAnimationMs" type="number" min="100" step="50" />
+          </label>
+
+          <label>
+            Page background
+            <input id="pageBackground" type="color" />
+          </label>
+
+          <label>
+            Page width (px)
+            <input id="pageWidth" type="number" min="200" step="10" />
+          </label>
+
+          <label>
+            Page height (px)
+            <input id="pageHeight" type="number" min="200" step="10" />
+          </label>
+
+          <label>
+            Settings hold (sec)
+            <input id="settingsHoldSeconds" type="number" min="1" max="30" step="1" />
+          </label>
+        </div>
+      </section>
+
+      <section>
+        <h2>Content</h2>
+        <div class="row-actions">
+          <button id="addTextPage" type="button">Add text page</button>
+          <button id="addImagePage" type="button">Add image page</button>
+        </div>
+        <div id="dropImagesZone" class="drop-zone" tabindex="0">
+          Drop images here to create pages, or click to select multiple image files.
+        </div>
+        <div id="pagesList" class="pages-list"></div>
+      </section>
+
+      <section>
+        <h2>Autoupdate</h2>
+        <div class="field-grid">
+          <label>
+            Update policy
+            <select id="updatePolicy">
+              <option value="everything">Everything</option>
+              <option value="minor">Minor + patch only</option>
+              <option value="patch">Patch only</option>
+            </select>
+          </label>
+
+          <label class="checkbox-row">
+            <input id="detectExternalContent" type="checkbox" />
+            Listen for imported content on removable drive
+          </label>
+
+          <label class="checkbox-row">
+            <input id="autoCheckOnLaunch" type="checkbox" />
+            Check updates automatically on launch
+          </label>
+        </div>
+
+        <div class="row-actions">
+          <button id="checkUpdates" type="button">Check updates</button>
+          <button id="downloadUpdate" type="button">Download update</button>
+          <button id="installUpdate" type="button">Install update</button>
+          <button id="exportPackage" type="button">Export package</button>
+          <button id="importPackage" type="button">Import package</button>
+        </div>
+      </section>
+
+      <footer>
+        <button id="saveAll" class="primary" type="button">Save all</button>
+        <span id="status"></span>
+      </footer>
+    </main>
+
+    <script src="./settings.js"></script>
+  </body>
+</html>

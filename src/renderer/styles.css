@@ -1,0 +1,212 @@
+:root {
+  color-scheme: dark;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.hidden {
+  display: none !important;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #101319;
+  color: #f8fafc;
+}
+
+#background-layer {
+  position: fixed;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  z-index: 0;
+}
+
+#fx-svg {
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+#book-stage {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1rem;
+  user-select: none;
+}
+
+#book-shell {
+  position: relative;
+  transform-style: preserve-3d;
+  perspective: 2800px;
+  cursor: grab;
+  touch-action: none;
+}
+
+#book-shell:active {
+  cursor: grabbing;
+}
+
+#book-gutter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 4px;
+  margin-left: -2px;
+  z-index: 8;
+  background: linear-gradient(180deg, rgb(0 0 0 / 22%), rgb(255 255 255 / 8%), rgb(0 0 0 / 24%));
+  box-shadow: 0 0 18px rgb(0 0 0 / 22%);
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+#book-shell.single-view #book-gutter {
+  opacity: 0;
+}
+
+.page {
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  backface-visibility: hidden;
+  background: #fff;
+  color: #111827;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 34%);
+}
+
+.page-left {
+  left: 0;
+  transform-origin: right center;
+}
+
+.page-right {
+  right: 0;
+  transform-origin: left center;
+}
+
+.page-content {
+  width: 100%;
+  height: 100%;
+  padding: 2.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.page-content.text {
+  font-size: clamp(1rem, 1.7vw, 1.8rem);
+  line-height: 1.52;
+  text-align: center;
+  white-space: pre-wrap;
+}
+
+.page-content.image {
+  padding: 0;
+}
+
+.page-content.image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#flip-sheet {
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  transform-style: preserve-3d;
+  pointer-events: none;
+  z-index: 12;
+}
+
+#flip-sheet.forward {
+  left: 50%;
+  transform-origin: left center;
+}
+
+#flip-sheet.backward {
+  left: 0;
+  transform-origin: right center;
+}
+
+.sheet-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  backface-visibility: hidden;
+  background: #fff;
+  box-shadow: 0 10px 36px rgb(0 0 0 / 36%);
+}
+
+.sheet-back {
+  transform: rotateY(180deg);
+}
+
+#sheet-shadow,
+#sheet-highlight {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 12px;
+}
+
+#sheet-shadow {
+  background: linear-gradient(90deg, rgb(0 0 0 / 28%), transparent 26%, transparent 74%, rgb(0 0 0 / 22%));
+  mix-blend-mode: multiply;
+  opacity: 0;
+}
+
+#sheet-highlight {
+  background: linear-gradient(100deg, rgb(255 255 255 / 16%), transparent 28%, transparent 72%, rgb(255 255 255 / 12%));
+  opacity: 0;
+}
+
+#controls {
+  display: flex;
+  gap: 0.75rem;
+}
+
+#controls button {
+  border: none;
+  border-radius: 999px;
+  padding: 0.65rem 1.4rem;
+  font-size: 0.95rem;
+  background: rgb(10 15 28 / 78%);
+  color: #fff;
+}
+
+#page-indicator {
+  min-height: 1.5rem;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  text-shadow: 0 2px 6px rgb(0 0 0 / 35%);
+}
+
+#touch-settings-zone {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 90px;
+  height: 90px;
+  z-index: 30;
+}

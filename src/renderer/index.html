@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Interactive Book</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="background-layer"></div>
+
+    <svg id="fx-svg" aria-hidden="true">
+      <filter id="book-displacement-filter">
+        <feImage id="displacement-map-image" x="0" y="0" width="100%" height="100%" preserveAspectRatio="none" />
+        <feDisplacementMap in="SourceGraphic" in2="displacement-map-image" scale="0" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+    </svg>
+
+    <main id="book-stage" role="main">
+      <div id="book-shell">
+        <div id="book-gutter"></div>
+
+        <article id="static-left" class="page page-left"></article>
+        <article id="static-right" class="page page-right"></article>
+
+        <article id="under-left" class="page page-left hidden"></article>
+        <article id="under-right" class="page page-right hidden"></article>
+
+        <div id="flip-sheet" class="hidden" aria-hidden="true">
+          <article id="flip-front" class="sheet-face"></article>
+          <article id="flip-back" class="sheet-face sheet-back"></article>
+          <div id="sheet-shadow"></div>
+          <div id="sheet-highlight"></div>
+        </div>
+      </div>
+
+      <div id="controls">
+        <button id="prev-btn" type="button">Prev</button>
+        <button id="next-btn" type="button">Next</button>
+      </div>
+
+      <div id="page-indicator"></div>
+    </main>
+
+    <div id="touch-settings-zone" aria-hidden="true"></div>
+    <script src="./viewer.js"></script>
+  </body>
+</html>

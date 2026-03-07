@@ -1,0 +1,62 @@
+{
+  "name": "interactive-book-app",
+  "version": "0.1.0",
+  "description": "Fullscreen interactive book with configurable design, content, and update behavior.",
+  "main": "src/main/main.js",
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/interactive-book-app.git"
+  },
+  "scripts": {
+    "dev": "cross-env NODE_ENV=development electron .",
+    "start": "cross-env NODE_ENV=production electron .",
+    "pack": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
+    "dist": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "drivelist": "^12.0.2",
+    "electron-log": "^5.2.4",
+    "electron-updater": "^6.6.2",
+    "fs-extra": "^11.3.2",
+    "semver": "^7.7.3"
+  },
+  "devDependencies": {
+    "cross-env": "^10.0.0",
+    "electron": "^37.6.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.example.interactivebook",
+    "productName": "InteractiveBook",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ]
+    },
+    "publish": [
+      {
+        "provider": "github"
+      }
+    ]
+  }
+}
