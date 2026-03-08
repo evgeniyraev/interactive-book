@@ -17,7 +17,7 @@ const {
 const { UpdateManager } = require('./updateManager');
 const { ExternalSyncManager } = require('./externalSyncManager');
 
-const isDev = process.env.NODE_ENV !== 'production';
+const isDev = !app.isPackaged;
 let mainWindow = null;
 let settingsWindow = null;
 
@@ -171,9 +171,14 @@ function registerIpcHandlers() {
 }
 
 app.whenReady().then(async () => {
-  await ensureDataDirectories();
+  const { createdConfig } = await ensureDataDirectories();
   registerIpcHandlers();
   createMainWindow();
+
+  if (!isDev && createdConfig) {
+    createSettingsWindow();
+  }
+
   startOrStopExternalSync();
 
   app.on('activate', () => {

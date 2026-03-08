@@ -48,11 +48,13 @@ async function ensureDataDirectories() {
   await fsp.mkdir(assetsDir, { recursive: true });
 
   const configPath = getConfigStoragePath();
+  let createdConfig = false;
   if (!fs.existsSync(configPath)) {
     await fsp.writeFile(configPath, JSON.stringify(defaultConfig, null, 2), 'utf8');
+    createdConfig = true;
   }
 
-  return { root, assetsDir };
+  return { root, assetsDir, createdConfig };
 }
 
 function loadConfigFromDisk() {
