@@ -86,6 +86,10 @@ function getPageWidth() {
   return Number(state.config?.design?.page?.width) || 900;
 }
 
+function getPageHeight() {
+  return Number(state.config?.design?.page?.height) || 1200;
+}
+
 function getBaseOffset() {
   return Number(state.config?.design?.pageOffsetX) || 0;
 }
@@ -114,6 +118,15 @@ function isCoverSlot(slot) {
   return slot?.kind === 'front-cover' || slot?.kind === 'back-cover';
 }
 
+function getMinimumCoverScaleFromInnerPadding() {
+  const pageWidth = getPageWidth();
+  const pageHeight = getPageHeight();
+  const innerPadding = getInnerPagePadding();
+  const widthScale = (pageWidth + innerPadding) / pageWidth;
+  const heightScale = (pageHeight + (innerPadding * 2)) / pageHeight;
+  return Math.max(widthScale, heightScale);
+}
+
 function getSpreadShift(spread) {
   const base = getBaseOffset();
   const pageWidth = getPageWidth();
@@ -123,11 +136,11 @@ function getSpreadShift(spread) {
   }
 
   if (spread.leftSlot == null && spread.rightSlot != null) {
-    return base - pageWidth / 2;
+    return base - (pageWidth * getSpreadScale(spread)) / 2;
   }
 
   if (spread.rightSlot == null && spread.leftSlot != null) {
-    return base + pageWidth / 2;
+    return base + (pageWidth * getSpreadScale(spread)) / 2;
   }
 
   return base;
@@ -140,7 +153,7 @@ function getSpreadScale(spread) {
 
   const singleSlot = spread.leftSlot || spread.rightSlot;
   if ((spread.leftSlot == null || spread.rightSlot == null) && isCoverSlot(singleSlot)) {
-    return getFirstLastPageScale();
+    return Math.max(getFirstLastPageScale(), getMinimumCoverScaleFromInnerPadding());
   }
 
   return 1;
