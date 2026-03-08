@@ -483,7 +483,12 @@ function computeFlipFromStep(step, current, target) {
 
   const frontSide = current.rightSlot === frontSlot ? 'right' : 'left';
 
-  const backSlot = frontSide === 'right' ? target.leftSlot : target.rightSlot;
+  let backSlot = frontSide === 'right' ? target.leftSlot : target.rightSlot;
+  if (frontSlot?.kind === 'front-cover') {
+    backSlot = { kind: 'inner-front' };
+  } else if (frontSlot?.kind === 'back-cover') {
+    backSlot = { kind: 'inner-back' };
+  }
   const underSlot = frontSide === 'right' ? target.rightSlot : target.leftSlot;
 
   const sourceOpenState = getOpenStateByIndex(state.spreadIndex);
@@ -602,6 +607,7 @@ function applyFlipProgress(progress) {
   });
 
   if (transitioningWithClosed) {
+    const lastSpreadIndex = Math.max(0, state.spreads.length - 1);
     const isOpeningFromFrontCover = state.flip.sourceSpreadIndex === 0 && state.flip.targetSpreadIndex === 1;
     if (isOpeningFromFrontCover) {
       const showBackInner = state.flip.progress > 0.001;
@@ -612,9 +618,27 @@ function applyFlipProgress(progress) {
 
     const isClosingToFrontCover = state.flip.sourceSpreadIndex === 1 && state.flip.targetSpreadIndex === 0;
     if (isClosingToFrontCover) {
-      const showBackInner = state.flip.progress <= 0.5;
+      const showBackInner = state.flip.progress < 0.999;
       elements.baseLeft.classList.add('hidden');
       elements.baseRight.classList.toggle('hidden', !showBackInner);
+      return;
+    }
+
+    const isOpeningFromBackCover =
+      state.flip.sourceSpreadIndex === lastSpreadIndex && state.flip.targetSpreadIndex === lastSpreadIndex - 1;
+    if (isOpeningFromBackCover) {
+      const showFrontInner = state.flip.progress > 0.001;
+      elements.baseRight.classList.add('hidden');
+      elements.baseLeft.classList.toggle('hidden', !showFrontInner);
+      return;
+    }
+
+    const isClosingToBackCover =
+      state.flip.sourceSpreadIndex === lastSpreadIndex - 1 && state.flip.targetSpreadIndex === lastSpreadIndex;
+    if (isClosingToBackCover) {
+      const showFrontInner = state.flip.progress < 0.999;
+      elements.baseRight.classList.add('hidden');
+      elements.baseLeft.classList.toggle('hidden', !showFrontInner);
       return;
     }
 
