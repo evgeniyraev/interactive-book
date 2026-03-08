@@ -95,13 +95,13 @@ function getEdgeZoneWidth() {
   return clamp(Number.isFinite(value) ? value : 92, 24, 320);
 }
 
-function getFirstLastPageScale() {
-  const value = Number(state.config?.design?.firstLastPageScale ?? state.config?.design?.coverScale);
-  return clamp(Number.isFinite(value) ? value : 1.14, 1, 1.5);
+function getInnerPagePaddingX() {
+  const value = Number(state.config?.design?.innerPagePadding);
+  return clamp(Number.isFinite(value) ? value : 24, 0, 120);
 }
 
-function getInnerPagePadding() {
-  const value = Number(state.config?.design?.innerPagePadding);
+function getInnerPagePaddingY() {
+  const value = Number(state.config?.design?.innerPagePaddingY ?? state.config?.design?.innerPagePadding);
   return clamp(Number.isFinite(value) ? value : 24, 0, 120);
 }
 
@@ -120,7 +120,7 @@ function isInnerSlot(slot) {
 
 function getCoverScaleFromInnerPadding() {
   const pageWidth = getPageWidth();
-  const innerPadding = getInnerPagePadding();
+  const innerPadding = getInnerPagePaddingX();
   return (pageWidth + innerPadding) / pageWidth;
 }
 
@@ -175,27 +175,37 @@ function getOpenStateByIndex(index) {
   return { factor: 1, progress };
 }
 
-function sideWidthsForState(openState) {
-  const maxWidth = Math.min(getSideViewMaxWidth(), getInnerPagePadding());
+function sideWidthsForState(openState, spreadIndex = state.spreadIndex) {
+  const maxWidth = Math.min(getSideViewMaxWidth(), getInnerPagePaddingX());
   const factor = openState.factor;
   const progress = openState.progress;
-  return {
+  const widths = {
     left: maxWidth * factor * progress,
     right: maxWidth * factor * (1 - progress)
   };
+
+  const penultimateSpreadIndex = Math.max(0, state.spreads.length - 2);
+  if (spreadIndex === penultimateSpreadIndex && factor > 0.001) {
+    widths.right = 0;
+  }
+
+  return widths;
 }
 
-function stackShiftForState(openState) {
-  const widths = sideWidthsForState(openState);
+function stackShiftForState(openState, spreadIndex = state.spreadIndex) {
+  const widths = sideWidthsForState(openState, spreadIndex);
   return (widths.left - widths.right) / 2;
 }
 
-function setSideStackWidths(openState) {
-  const widths = sideWidthsForState(openState);
+function applySideStackWidths(widths) {
   elements.sideLeftStack.style.width = `${widths.left}px`;
   elements.sideRightStack.style.width = `${widths.right}px`;
   elements.sideLeftStack.classList.toggle('hidden', widths.left <= 0.25);
   elements.sideRightStack.classList.toggle('hidden', widths.right <= 0.25);
+}
+
+function setSideStackWidths(openState, spreadIndex = state.spreadIndex) {
+  applySideStackWidths(sideWidthsForState(openState, spreadIndex));
 }
 
 function setShellTransform(shift, scale = 1) {
@@ -309,6 +319,7 @@ async function renderSlot(element, slot) {
   const background = state.config.design.page.background;
   element.style.background = background;
   element.classList.toggle('inner-slot', isInnerSlot(slot));
+  element.classList.toggle('cover-slot', isCoverSlot(slot));
   element.innerHTML = await buildSlotMarkup(slot);
 }
 
@@ -418,11 +429,11 @@ async function renderStaticSpread() {
   elements.sheetShadow.style.opacity = '0';
   elements.sheetHighlight.style.opacity = '0';
 
-  const fullShift = getSpreadShift(spread) + stackShiftForState(openState);
+  const fullShift = getSpreadShift(spread) + stackShiftForState(openState, state.spreadIndex);
 
   elements.shell.classList.toggle('single-view', isSingleSpread(spread));
   setShellTransform(fullShift, getSpreadScale(spread));
-  setSideStackWidths(openState);
+  setSideStackWidths(openState, state.spreadIndex);
   positionEdgeZones();
 }
 
@@ -431,7 +442,10 @@ async function applyDesign() {
   const backgroundUrl = await resolveAssetUrl(design.backgroundImage);
   const mapUrl = await resolveAssetUrl(design.displacementMap);
   const sideTextureUrl = await resolveAssetUrl(design.sideViewTexture || '');
+  const appBackgroundColor = design.appBackgroundColor || '#101319';
 
+  document.body.style.backgroundColor = appBackgroundColor;
+  elements.backgroundLayer.style.backgroundColor = appBackgroundColor;
   elements.backgroundLayer.style.backgroundImage = backgroundUrl ? `url("${backgroundUrl}")` : 'none';
 
   const pageWidth = getPageWidth();
@@ -456,7 +470,9 @@ async function applyDesign() {
   elements.touchZone.dataset.holdDuration = String(holdMs);
 
   document.documentElement.style.setProperty('--edge-zone-width', `${getEdgeZoneWidth()}px`);
-  document.documentElement.style.setProperty('--inner-page-padding', `${getInnerPagePadding()}px`);
+  document.documentElement.style.setProperty('--inner-page-padding', `${getInnerPagePaddingX()}px`);
+  document.documentElement.style.setProperty('--inner-page-padding-x', `${getInnerPagePaddingX()}px`);
+  document.documentElement.style.setProperty('--inner-page-padding-y', `${getInnerPagePaddingY()}px`);
 }
 
 function computeFlipFromStep(step, current, target) {
@@ -483,9 +499,10 @@ function computeFlipFromStep(step, current, target) {
     dragging: false,
     pointerId: null,
     shellRect: elements.shell.getBoundingClientRect(),
+    sourceSpreadIndex: state.spreadIndex,
     targetSpreadIndex: state.spreadIndex + step,
-    sourceShift: getSpreadShift(current) + stackShiftForState(sourceOpenState),
-    targetShift: getSpreadShift(target) + stackShiftForState(targetOpenState),
+    sourceShift: getSpreadShift(current) + stackShiftForState(sourceOpenState, state.spreadIndex),
+    targetShift: getSpreadShift(target) + stackShiftForState(targetOpenState, state.spreadIndex + step),
     sourceScale: getSpreadScale(current),
     targetScale: getSpreadScale(target),
     sourceOpenState,
@@ -518,10 +535,6 @@ async function prepareFlip(step) {
   ]);
 
   await renderBasePages(flip.sourceOpenState);
-  if (flip.sourceOpenState.factor !== flip.targetOpenState.factor) {
-    elements.baseLeft.classList.add('hidden');
-    elements.baseRight.classList.add('hidden');
-  }
 
   if (flip.frontSide === 'right') {
     elements.staticRight.classList.add('hidden');
@@ -580,15 +593,38 @@ function applyFlipProgress(progress) {
     progress: lerp(state.flip.sourceOpenState.progress, state.flip.targetOpenState.progress, state.flip.progress)
   };
 
-  setSideStackWidths(openState);
   const transitioningWithClosed = state.flip.sourceOpenState.factor !== state.flip.targetOpenState.factor;
+  const sourceWidths = sideWidthsForState(state.flip.sourceOpenState, state.flip.sourceSpreadIndex);
+  const targetWidths = sideWidthsForState(state.flip.targetOpenState, state.flip.targetSpreadIndex);
+  applySideStackWidths({
+    left: lerp(sourceWidths.left, targetWidths.left, state.flip.progress),
+    right: lerp(sourceWidths.right, targetWidths.right, state.flip.progress)
+  });
+
   if (transitioningWithClosed) {
+    const isOpeningFromFrontCover = state.flip.sourceSpreadIndex === 0 && state.flip.targetSpreadIndex === 1;
+    if (isOpeningFromFrontCover) {
+      const showBackInner = state.flip.progress > 0.001;
+      elements.baseLeft.classList.add('hidden');
+      elements.baseRight.classList.toggle('hidden', !showBackInner);
+      return;
+    }
+
+    const isClosingToFrontCover = state.flip.sourceSpreadIndex === 1 && state.flip.targetSpreadIndex === 0;
+    if (isClosingToFrontCover) {
+      const showBackInner = state.flip.progress <= 0.5;
+      elements.baseLeft.classList.add('hidden');
+      elements.baseRight.classList.toggle('hidden', !showBackInner);
+      return;
+    }
+
     elements.baseLeft.classList.add('hidden');
     elements.baseRight.classList.add('hidden');
-  } else {
-    elements.baseLeft.classList.toggle('hidden', openState.factor <= 0.001);
-    elements.baseRight.classList.toggle('hidden', openState.factor <= 0.001);
+    return;
   }
+
+  elements.baseLeft.classList.toggle('hidden', openState.factor <= 0.001);
+  elements.baseRight.classList.toggle('hidden', openState.factor <= 0.001);
 }
 
 async function finishFlip(commit) {

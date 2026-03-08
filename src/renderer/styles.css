@@ -134,19 +134,19 @@ body {
 
 .base-page {
   z-index: 3;
-  width: calc(50% + var(--inner-page-padding, 24px));
-  height: 100%;
-  top: 0;
+  width: calc(50% + var(--inner-page-padding-x, 24px));
+  height: calc(100% + (var(--inner-page-padding-y, 24px) * 2));
+  top: calc(var(--inner-page-padding-y, 24px) * -1);
   box-shadow: none;
   pointer-events: none;
 }
 
 .base-page.page-left {
-  left: calc(var(--inner-page-padding, 24px) * -1);
+  left: calc(var(--inner-page-padding-x, 24px) * -1);
 }
 
 .base-page.page-right {
-  right: calc(var(--inner-page-padding, 24px) * -1);
+  right: calc(var(--inner-page-padding-x, 24px) * -1);
 }
 
 .page-content {
@@ -215,6 +215,42 @@ body {
 
 .inner-slot {
   box-shadow: none !important;
+}
+
+.page.page-left.inner-slot:not(.base-page),
+.page.page-left.cover-slot {
+  left: calc(var(--inner-page-padding-x, 24px) * -1);
+  width: calc(50% + var(--inner-page-padding-x, 24px));
+  top: calc(var(--inner-page-padding-y, 24px) * -1);
+  height: calc(100% + (var(--inner-page-padding-y, 24px) * 2));
+}
+
+.page.page-right.inner-slot:not(.base-page),
+.page.page-right.cover-slot {
+  right: calc(var(--inner-page-padding-x, 24px) * -1);
+  width: calc(50% + var(--inner-page-padding-x, 24px));
+  top: calc(var(--inner-page-padding-y, 24px) * -1);
+  height: calc(100% + (var(--inner-page-padding-y, 24px) * 2));
+}
+
+#flip-sheet.forward .sheet-face.inner-slot,
+#flip-sheet.forward .sheet-face.cover-slot {
+  left: 0;
+  top: calc(var(--inner-page-padding-y, 24px) * -1);
+  right: auto;
+  bottom: auto;
+  width: calc(100% + var(--inner-page-padding-x, 24px));
+  height: calc(100% + (var(--inner-page-padding-y, 24px) * 2));
+}
+
+#flip-sheet.backward .sheet-face.inner-slot,
+#flip-sheet.backward .sheet-face.cover-slot {
+  left: calc(var(--inner-page-padding-x, 24px) * -1);
+  top: calc(var(--inner-page-padding-y, 24px) * -1);
+  right: auto;
+  bottom: auto;
+  width: calc(100% + var(--inner-page-padding-x, 24px));
+  height: calc(100% + (var(--inner-page-padding-y, 24px) * 2));
 }
 
 .sheet-back {

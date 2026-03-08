@@ -12,12 +12,13 @@ const FIXED_PAGE_META = [
 ];
 
 const els = {
+  appBackgroundColor: document.getElementById('appBackgroundColor'),
   backgroundImage: document.getElementById('backgroundImage'),
   displacementMap: document.getElementById('displacementMap'),
   pageOffsetX: document.getElementById('pageOffsetX'),
   edgeZoneWidth: document.getElementById('edgeZoneWidth'),
-  firstLastPageScale: document.getElementById('firstLastPageScale'),
   innerPagePadding: document.getElementById('innerPagePadding'),
+  innerPagePaddingY: document.getElementById('innerPagePaddingY'),
   sideViewTexture: document.getElementById('sideViewTexture'),
   sideViewMaxWidth: document.getElementById('sideViewMaxWidth'),
   turnAnimationMs: document.getElementById('turnAnimationMs'),
@@ -68,9 +69,10 @@ function normalizeDesign() {
   const design = state.config.design || {};
   state.config.design = {
     ...design,
+    appBackgroundColor: String(design.appBackgroundColor || '#101319'),
     edgeZoneWidth: Number(design.edgeZoneWidth ?? 92),
-    firstLastPageScale: Number(design.firstLastPageScale ?? design.coverScale ?? 1.14),
     innerPagePadding: Number(design.innerPagePadding ?? 24),
+    innerPagePaddingY: Number(design.innerPagePaddingY ?? design.innerPagePadding ?? 24),
     sideViewTexture: String(design.sideViewTexture || ''),
     sideViewMaxWidth: Number(design.sideViewMaxWidth ?? 68)
   };
@@ -92,12 +94,13 @@ function normalizeContent() {
 }
 
 function readPrimitiveInputs() {
+  state.config.design.appBackgroundColor = els.appBackgroundColor.value || '#101319';
   state.config.design.backgroundImage = els.backgroundImage.value.trim();
   state.config.design.displacementMap = els.displacementMap.value.trim();
   state.config.design.pageOffsetX = Number(els.pageOffsetX.value || 0);
   state.config.design.edgeZoneWidth = Number(els.edgeZoneWidth.value || 92);
-  state.config.design.firstLastPageScale = Number(els.firstLastPageScale.value || 1.14);
   state.config.design.innerPagePadding = Number(els.innerPagePadding.value || 24);
+  state.config.design.innerPagePaddingY = Number(els.innerPagePaddingY.value || 24);
   state.config.design.sideViewTexture = els.sideViewTexture.value.trim();
   state.config.design.sideViewMaxWidth = Number(els.sideViewMaxWidth.value || 68);
   state.config.design.turnAnimationMs = Number(els.turnAnimationMs.value || 700);
@@ -112,12 +115,13 @@ function readPrimitiveInputs() {
 }
 
 function writePrimitiveInputs() {
+  els.appBackgroundColor.value = state.config.design.appBackgroundColor || '#101319';
   els.backgroundImage.value = state.config.design.backgroundImage || '';
   els.displacementMap.value = state.config.design.displacementMap || '';
   els.pageOffsetX.value = String(state.config.design.pageOffsetX ?? 0);
   els.edgeZoneWidth.value = String(state.config.design.edgeZoneWidth ?? 92);
-  els.firstLastPageScale.value = String(state.config.design.firstLastPageScale ?? 1.14);
   els.innerPagePadding.value = String(state.config.design.innerPagePadding ?? 24);
+  els.innerPagePaddingY.value = String(state.config.design.innerPagePaddingY ?? state.config.design.innerPagePadding ?? 24);
   els.sideViewTexture.value = state.config.design.sideViewTexture || '';
   els.sideViewMaxWidth.value = String(state.config.design.sideViewMaxWidth ?? 68);
   els.turnAnimationMs.value = String(state.config.design.turnAnimationMs ?? 700);

@@ -23,12 +23,13 @@ const defaultConfig = {
     settingsHoldSeconds: 10
   },
   design: {
+    appBackgroundColor: '#101319',
     backgroundImage: '',
     displacementMap: '',
     pageOffsetX: 0,
     edgeZoneWidth: 92,
-    firstLastPageScale: 1.14,
     innerPagePadding: 24,
+    innerPagePaddingY: 24,
     sideViewTexture: '',
     sideViewMaxWidth: 68,
     turnAnimationMs: 700,
