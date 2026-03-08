@@ -284,9 +284,12 @@ function appendImagePages(assetPaths) {
 
 async function filesToImportPayload(files) {
   const payload = [];
+  const sortedFiles = Array.from(files || [])
+    .filter(Boolean)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
 
-  for (const file of Array.from(files || [])) {
-    if (!file || (file.type && !file.type.startsWith('image/'))) {
+  for (const file of sortedFiles) {
+    if (file.type && !file.type.startsWith('image/')) {
       continue;
     }
 
