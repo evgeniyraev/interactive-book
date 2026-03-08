@@ -1,6 +1,6 @@
 {
   "name": "interactive-book-app",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Fullscreen interactive book with configurable design, content, and update behavior.",
   "main": "src/main/main.js",
   "author": "",
