@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-org/interactive-book-app.git"
+    "url": "https://github.com/evgeniyraev/interactive-book.git"
   },
   "scripts": {
     "dev": "cross-env NODE_ENV=development electron .",
@@ -55,7 +55,9 @@
     },
     "publish": [
       {
-        "provider": "github"
+        "provider": "github",
+        "owner": "evgeniyraev",
+        "repo": "interactive-book"
       }
     ]
   }
