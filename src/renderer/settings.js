@@ -22,6 +22,9 @@ const els = {
   sideViewTexture: document.getElementById('sideViewTexture'),
   sideViewMaxWidth: document.getElementById('sideViewMaxWidth'),
   turnAnimationMs: document.getElementById('turnAnimationMs'),
+  idleRandomFlipEnabled: document.getElementById('idleRandomFlipEnabled'),
+  idleRandomFlipDelaySec: document.getElementById('idleRandomFlipDelaySec'),
+  idleRandomFlipIntervalSec: document.getElementById('idleRandomFlipIntervalSec'),
   pageBackground: document.getElementById('pageBackground'),
   pageWidth: document.getElementById('pageWidth'),
   pageHeight: document.getElementById('pageHeight'),
@@ -74,7 +77,10 @@ function normalizeDesign() {
     innerPagePadding: Number(design.innerPagePadding ?? 24),
     innerPagePaddingY: Number(design.innerPagePaddingY ?? design.innerPagePadding ?? 24),
     sideViewTexture: String(design.sideViewTexture || ''),
-    sideViewMaxWidth: Number(design.sideViewMaxWidth ?? 68)
+    sideViewMaxWidth: Number(design.sideViewMaxWidth ?? 68),
+    idleRandomFlipEnabled: Boolean(design.idleRandomFlipEnabled),
+    idleRandomFlipDelaySec: Number(design.idleRandomFlipDelaySec ?? 45),
+    idleRandomFlipIntervalSec: Number(design.idleRandomFlipIntervalSec ?? 8)
   };
 }
 
@@ -104,6 +110,9 @@ function readPrimitiveInputs() {
   state.config.design.sideViewTexture = els.sideViewTexture.value.trim();
   state.config.design.sideViewMaxWidth = Number(els.sideViewMaxWidth.value || 68);
   state.config.design.turnAnimationMs = Number(els.turnAnimationMs.value || 700);
+  state.config.design.idleRandomFlipEnabled = Boolean(els.idleRandomFlipEnabled.checked);
+  state.config.design.idleRandomFlipDelaySec = Number(els.idleRandomFlipDelaySec.value || 45);
+  state.config.design.idleRandomFlipIntervalSec = Number(els.idleRandomFlipIntervalSec.value || 8);
   state.config.design.page.background = els.pageBackground.value || '#ffffff';
   state.config.design.page.width = Number(els.pageWidth.value || 900);
   state.config.design.page.height = Number(els.pageHeight.value || 1200);
@@ -125,6 +134,9 @@ function writePrimitiveInputs() {
   els.sideViewTexture.value = state.config.design.sideViewTexture || '';
   els.sideViewMaxWidth.value = String(state.config.design.sideViewMaxWidth ?? 68);
   els.turnAnimationMs.value = String(state.config.design.turnAnimationMs ?? 700);
+  els.idleRandomFlipEnabled.checked = Boolean(state.config.design.idleRandomFlipEnabled);
+  els.idleRandomFlipDelaySec.value = String(state.config.design.idleRandomFlipDelaySec ?? 45);
+  els.idleRandomFlipIntervalSec.value = String(state.config.design.idleRandomFlipIntervalSec ?? 8);
   els.pageBackground.value = state.config.design.page.background || '#ffffff';
   els.pageWidth.value = String(state.config.design.page.width ?? 900);
   els.pageHeight.value = String(state.config.design.page.height ?? 1200);

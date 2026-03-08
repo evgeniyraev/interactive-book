@@ -15,7 +15,11 @@ const state = {
   holdTimer: null,
   resolvedAssetCache: new Map(),
   animationFrame: null,
-  isAnimating: false
+  isAnimating: false,
+  idleStartTimer: null,
+  idleLoopTimer: null,
+  idleToken: 0,
+  lastActivityAt: 0
 };
 
 const elements = {
@@ -108,6 +112,105 @@ function getInnerPagePaddingY() {
 function getSideViewMaxWidth() {
   const value = Number(state.config?.design?.sideViewMaxWidth);
   return clamp(Number.isFinite(value) ? value : 68, 0, 220);
+}
+
+function getIdleRandomFlipEnabled() {
+  return Boolean(state.config?.design?.idleRandomFlipEnabled);
+}
+
+function getIdleRandomFlipDelayMs() {
+  const value = Number(state.config?.design?.idleRandomFlipDelaySec);
+  const seconds = clamp(Number.isFinite(value) ? value : 45, 5, 3600);
+  return seconds * 1000;
+}
+
+function getIdleRandomFlipIntervalMs() {
+  const value = Number(state.config?.design?.idleRandomFlipIntervalSec);
+  const seconds = clamp(Number.isFinite(value) ? value : 8, 1, 3600);
+  return seconds * 1000;
+}
+
+function chooseRandomIdleStep() {
+  const canGoNext = state.spreadIndex < state.spreads.length - 1;
+  const canGoPrev = state.spreadIndex > 0;
+
+  if (canGoNext && canGoPrev) {
+    return Math.random() < 0.5 ? 1 : -1;
+  }
+
+  if (canGoNext) {
+    return 1;
+  }
+
+  if (canGoPrev) {
+    return -1;
+  }
+
+  return 0;
+}
+
+function clearIdleRandomFlipTimers() {
+  if (state.idleStartTimer) {
+    clearTimeout(state.idleStartTimer);
+    state.idleStartTimer = null;
+  }
+
+  if (state.idleLoopTimer) {
+    clearTimeout(state.idleLoopTimer);
+    state.idleLoopTimer = null;
+  }
+}
+
+async function runIdleRandomFlipLoop(token) {
+  if (token !== state.idleToken || !getIdleRandomFlipEnabled()) {
+    return;
+  }
+
+  if (state.flip || state.isAnimating) {
+    state.idleLoopTimer = setTimeout(() => {
+      runIdleRandomFlipLoop(token);
+    }, 250);
+    return;
+  }
+
+  const step = chooseRandomIdleStep();
+  if (step !== 0) {
+    await triggerStep(step);
+  }
+
+  if (token !== state.idleToken || !getIdleRandomFlipEnabled()) {
+    return;
+  }
+
+  const animationMs = Math.max(220, Number(state.config?.design?.turnAnimationMs) || 700);
+  const waitMs = getIdleRandomFlipIntervalMs() + (step !== 0 ? animationMs : 0);
+  state.idleLoopTimer = setTimeout(() => {
+    runIdleRandomFlipLoop(token);
+  }, waitMs);
+}
+
+function armIdleRandomFlipStart() {
+  clearIdleRandomFlipTimers();
+  if (!getIdleRandomFlipEnabled()) {
+    return;
+  }
+
+  const token = state.idleToken;
+  state.idleStartTimer = setTimeout(() => {
+    state.idleStartTimer = null;
+    runIdleRandomFlipLoop(token);
+  }, getIdleRandomFlipDelayMs());
+}
+
+function noteUserActivity(force = false) {
+  const now = Date.now();
+  if (!force && now - state.lastActivityAt < 140) {
+    return;
+  }
+
+  state.lastActivityAt = now;
+  state.idleToken += 1;
+  armIdleRandomFlipStart();
 }
 
 function isCoverSlot(slot) {
@@ -858,6 +961,7 @@ async function reloadFromConfig() {
 
   await applyDesign();
   await renderStaticSpread();
+  noteUserActivity(true);
 }
 
 async function triggerStep(step) {
@@ -868,6 +972,10 @@ async function triggerStep(step) {
 }
 
 function setupEvents() {
+  const markActivity = () => {
+    noteUserActivity();
+  };
+
   elements.edgeNextZone.addEventListener('click', () => {
     triggerStep(1);
   });
@@ -882,7 +990,14 @@ function setupEvents() {
   elements.shell.addEventListener('pointercancel', onPointerCancel);
   elements.shell.addEventListener('lostpointercapture', onPointerCancel);
 
+  window.addEventListener('pointerdown', markActivity, { passive: true });
+  window.addEventListener('pointermove', markActivity, { passive: true });
+  window.addEventListener('wheel', markActivity, { passive: true });
+  window.addEventListener('touchstart', markActivity, { passive: true });
+
   window.addEventListener('keydown', (event) => {
+    noteUserActivity();
+
     if (event.key === 'ArrowRight') {
       triggerStep(1);
     }

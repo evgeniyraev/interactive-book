@@ -33,6 +33,9 @@ const defaultConfig = {
     sideViewTexture: '',
     sideViewMaxWidth: 68,
     turnAnimationMs: 700,
+    idleRandomFlipEnabled: false,
+    idleRandomFlipDelaySec: 45,
+    idleRandomFlipIntervalSec: 8,
     page: {
       background: '#ffffff',
       width: 900,
