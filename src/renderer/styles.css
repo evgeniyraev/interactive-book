@@ -209,11 +209,18 @@ body {
   inset: 0;
   overflow: hidden;
   backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform-style: preserve-3d;
   background: #fff;
+  color: #111827;
   box-shadow: 0 10px 36px rgb(0 0 0 / 36%);
 }
 
-.inner-slot {
+#flip-front {
+  transform: translateZ(0.1px);
+}
+
+.page.inner-slot {
   box-shadow: none !important;
 }
 
@@ -254,7 +261,7 @@ body {
 }
 
 .sheet-back {
-  transform: rotateY(180deg);
+  transform: rotateY(180deg) translateZ(0.1px);
 }
 
 #sheet-shadow,
