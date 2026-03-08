@@ -1,6 +1,5 @@
 const path = require('node:path');
 const fs = require('node:fs/promises');
-const crypto = require('node:crypto');
 const fse = require('fs-extra');
 const { dialog } = require('electron');
 const {
@@ -13,10 +12,6 @@ const {
 } = require('./configManager');
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.avif']);
-
-function randomName(ext = '') {
-  return `${Date.now()}-${crypto.randomBytes(5).toString('hex')}${ext}`;
-}
 
 function toPortablePath(value) {
   return value.split(path.sep).join('/');
@@ -34,12 +29,38 @@ function resolveDataPath(relativePath) {
   return path.join(getDataRoot(), fromPortablePath(relativePath));
 }
 
-async function copyFileToAssets(filePath) {
+function sanitizeAssetFileName(fileName, fallbackExt = '') {
+  const baseName = path.basename(String(fileName || '')).replace(/\u0000/g, '');
+  const ext = path.extname(baseName);
+  const nameWithoutExt = path.basename(baseName, ext);
+  const safeName = nameWithoutExt || 'asset';
+  const safeExt = ext || fallbackExt || '';
+  return `${safeName}${safeExt}`;
+}
+
+async function createUniqueAssetRelativePath(preferredFileName) {
   await ensureDataDirectories();
 
-  const ext = path.extname(filePath);
-  const fileName = randomName(ext);
-  const assetsRelativePath = toPortablePath(path.join('assets', fileName));
+  const candidate = path.basename(preferredFileName || 'asset');
+  const ext = path.extname(candidate);
+  const baseName = path.basename(candidate, ext) || 'asset';
+
+  let suffix = 0;
+  while (true) {
+    const numbered = suffix === 0 ? `${baseName}${ext}` : `${baseName}-${suffix + 1}${ext}`;
+    const assetsRelativePath = toPortablePath(path.join('assets', numbered));
+    const destination = resolveDataPath(assetsRelativePath);
+    if (!(await fse.pathExists(destination))) {
+      return assetsRelativePath;
+    }
+
+    suffix += 1;
+  }
+}
+
+async function copyFileToAssets(filePath) {
+  const fileName = sanitizeAssetFileName(path.basename(filePath), path.extname(filePath));
+  const assetsRelativePath = await createUniqueAssetRelativePath(fileName);
   const destination = resolveDataPath(assetsRelativePath);
 
   await fse.copy(filePath, destination, { overwrite: true });
@@ -73,20 +94,17 @@ function normalizeImageExtension(fileName = '') {
 }
 
 async function copyManyBuffersToAssets(files) {
-  await ensureDataDirectories();
-
   const imported = [];
   for (const file of files) {
     const ext = normalizeImageExtension(file?.name || '');
-    const fileName = randomName(ext);
-    const assetsRelativePath = toPortablePath(path.join('assets', fileName));
-    const destination = resolveDataPath(assetsRelativePath);
-
+    const fileName = sanitizeAssetFileName(file?.name || '', ext);
     const bytes = file?.data;
     if (!(bytes instanceof ArrayBuffer)) {
       continue;
     }
 
+    const assetsRelativePath = await createUniqueAssetRelativePath(fileName);
+    const destination = resolveDataPath(assetsRelativePath);
     await fs.writeFile(destination, Buffer.from(new Uint8Array(bytes)));
     imported.push(assetsRelativePath);
   }
