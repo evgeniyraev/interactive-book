@@ -79,8 +79,8 @@ body {
 
 .side-stack {
   position: absolute;
-  top: calc(var(--inner-page-padding, 24px) * -1);
-  height: calc(100% + (var(--inner-page-padding, 24px) * 2));
+  top: 0;
+  height: 100%;
   width: 0;
   z-index: 10;
   pointer-events: none;
@@ -91,11 +91,13 @@ body {
 }
 
 #side-left-stack {
-  left: 0;
+  left: auto;
+  right: 100%;
 }
 
 #side-right-stack {
-  right: 0;
+  left: 100%;
+  right: auto;
 }
 
 .page {
@@ -132,9 +134,10 @@ body {
 
 .base-page {
   z-index: 3;
-  width: calc(50% + (var(--inner-page-padding, 24px) * 2));
-  height: calc(100% + (var(--inner-page-padding, 24px) * 2));
-  top: calc(var(--inner-page-padding, 24px) * -1);
+  width: calc(50% + var(--inner-page-padding, 24px));
+  height: 100%;
+  top: 0;
+  box-shadow: none;
   pointer-events: none;
 }
 
@@ -208,6 +211,10 @@ body {
   backface-visibility: hidden;
   background: #fff;
   box-shadow: 0 10px 36px rgb(0 0 0 / 36%);
+}
+
+.inner-slot {
+  box-shadow: none !important;
 }
 
 .sheet-back {

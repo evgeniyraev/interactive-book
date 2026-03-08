@@ -86,10 +86,6 @@ function getPageWidth() {
   return Number(state.config?.design?.page?.width) || 900;
 }
 
-function getPageHeight() {
-  return Number(state.config?.design?.page?.height) || 1200;
-}
-
 function getBaseOffset() {
   return Number(state.config?.design?.pageOffsetX) || 0;
 }
@@ -118,13 +114,14 @@ function isCoverSlot(slot) {
   return slot?.kind === 'front-cover' || slot?.kind === 'back-cover';
 }
 
-function getMinimumCoverScaleFromInnerPadding() {
+function isInnerSlot(slot) {
+  return slot?.kind === 'inner-front' || slot?.kind === 'inner-back';
+}
+
+function getCoverScaleFromInnerPadding() {
   const pageWidth = getPageWidth();
-  const pageHeight = getPageHeight();
   const innerPadding = getInnerPagePadding();
-  const widthScale = (pageWidth + innerPadding) / pageWidth;
-  const heightScale = (pageHeight + (innerPadding * 2)) / pageHeight;
-  return Math.max(widthScale, heightScale);
+  return (pageWidth + innerPadding) / pageWidth;
 }
 
 function getSpreadShift(spread) {
@@ -153,7 +150,7 @@ function getSpreadScale(spread) {
 
   const singleSlot = spread.leftSlot || spread.rightSlot;
   if ((spread.leftSlot == null || spread.rightSlot == null) && isCoverSlot(singleSlot)) {
-    return Math.max(getFirstLastPageScale(), getMinimumCoverScaleFromInnerPadding());
+    return getCoverScaleFromInnerPadding();
   }
 
   return 1;
@@ -202,7 +199,7 @@ function setSideStackWidths(openState) {
 }
 
 function setShellTransform(shift, scale = 1) {
-  elements.shell.style.transform = `translateX(${shift}px) scale(${scale})`;
+  elements.shell.style.transform = `translateX(${shift}px) scaleX(${scale})`;
 }
 
 function buildSpreads() {
@@ -311,6 +308,7 @@ async function buildSlotMarkup(slot) {
 async function renderSlot(element, slot) {
   const background = state.config.design.page.background;
   element.style.background = background;
+  element.classList.toggle('inner-slot', isInnerSlot(slot));
   element.innerHTML = await buildSlotMarkup(slot);
 }
 
@@ -563,8 +561,14 @@ function applyFlipProgress(progress) {
   const lift = bend * 14;
 
   elements.flipSheet.style.transform = `translateZ(${lift}px) rotateY(${angle}deg) skewY(${skew}deg)`;
-  elements.sheetShadow.style.opacity = `${0.14 + bend * 0.62}`;
-  elements.sheetHighlight.style.opacity = `${0.08 + bend * 0.36}`;
+  const closedOpenTransition = state.flip.sourceOpenState.factor !== state.flip.targetOpenState.factor;
+  if (closedOpenTransition) {
+    elements.sheetShadow.style.opacity = '0';
+    elements.sheetHighlight.style.opacity = '0';
+  } else {
+    elements.sheetShadow.style.opacity = `${0.14 + bend * 0.62}`;
+    elements.sheetHighlight.style.opacity = `${0.08 + bend * 0.36}`;
+  }
 
   setShellTransform(
     lerp(state.flip.sourceShift, state.flip.targetShift, state.flip.progress),
