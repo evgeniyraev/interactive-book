@@ -63,6 +63,23 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+function normalizeHexColor(value, fallback = '#ffffff') {
+  const input = String(value || '').trim();
+  return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(input) ? input : fallback;
+}
+
+function hexToRgb(hex) {
+  const clean = normalizeHexColor(hex, '#ffffff').slice(1);
+  const expanded = clean.length === 3 ? clean.split('').map((part) => part + part).join('') : clean;
+  const intValue = Number.parseInt(expanded, 16);
+
+  return {
+    r: (intValue >> 16) & 255,
+    g: (intValue >> 8) & 255,
+    b: intValue & 255
+  };
+}
+
 function normalizeBookPage(rawPage, fallbackText = '') {
   const type = rawPage?.type === 'image' ? 'image' : 'text';
   const text = rawPage?.text || rawPage?.title || fallbackText;
@@ -112,6 +129,23 @@ function getInnerPagePaddingY() {
 function getSideViewMaxWidth() {
   const value = Number(state.config?.design?.sideViewMaxWidth);
   return clamp(Number.isFinite(value) ? value : 68, 0, 220);
+}
+
+function getSideViewColor() {
+  return normalizeHexColor(state.config?.design?.sideViewColor, '#c8b79b');
+}
+
+function getSideViewOpacity() {
+  const value = Number(state.config?.design?.sideViewOpacity);
+  return clamp(Number.isFinite(value) ? value : 1, 0, 1);
+}
+
+function getPageBackgroundStyle() {
+  const color = normalizeHexColor(state.config?.design?.page?.background, '#ffffff');
+  const alphaValue = Number(state.config?.design?.page?.backgroundOpacity);
+  const alpha = clamp(Number.isFinite(alphaValue) ? alphaValue : 1, 0, 1);
+  const rgb = hexToRgb(color);
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
 }
 
 function getIdleRandomFlipEnabled() {
@@ -419,7 +453,7 @@ async function buildSlotMarkup(slot) {
 }
 
 async function renderSlot(element, slot) {
-  const background = state.config.design.page.background;
+  const background = getPageBackgroundStyle();
   element.style.background = background;
   element.classList.toggle('inner-slot', isInnerSlot(slot));
   element.classList.toggle('cover-slot', isCoverSlot(slot));
@@ -545,6 +579,8 @@ async function applyDesign() {
   const backgroundUrl = await resolveAssetUrl(design.backgroundImage);
   const mapUrl = await resolveAssetUrl(design.displacementMap);
   const sideTextureUrl = await resolveAssetUrl(design.sideViewTexture || '');
+  const sideViewColor = getSideViewColor();
+  const sideViewOpacity = getSideViewOpacity();
   const appBackgroundColor = design.appBackgroundColor || '#101319';
 
   document.body.style.backgroundColor = appBackgroundColor;
@@ -557,9 +593,13 @@ async function applyDesign() {
   elements.shell.style.width = `${pageWidth * 2}px`;
   elements.shell.style.height = `${pageHeight}px`;
 
-  const stackTexture = sideTextureUrl ? `url("${sideTextureUrl}")` : 'linear-gradient(90deg, #c8b79b, #bca88a, #d6c8ad)';
+  const stackTexture = sideTextureUrl ? `url("${sideTextureUrl}")` : 'none';
   elements.sideLeftStack.style.backgroundImage = stackTexture;
   elements.sideRightStack.style.backgroundImage = stackTexture;
+  elements.sideLeftStack.style.backgroundColor = sideViewColor;
+  elements.sideRightStack.style.backgroundColor = sideViewColor;
+  elements.sideLeftStack.style.opacity = String(sideViewOpacity);
+  elements.sideRightStack.style.opacity = String(sideViewOpacity);
 
   const displacementScale = mapUrl ? 18 : 0;
   elements.stage.style.filter = mapUrl ? 'url(#book-displacement-filter)' : 'none';

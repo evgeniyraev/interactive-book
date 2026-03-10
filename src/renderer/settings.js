@@ -21,11 +21,14 @@ const els = {
   innerPagePaddingY: document.getElementById('innerPagePaddingY'),
   sideViewTexture: document.getElementById('sideViewTexture'),
   sideViewMaxWidth: document.getElementById('sideViewMaxWidth'),
+  sideViewColor: document.getElementById('sideViewColor'),
+  sideViewOpacity: document.getElementById('sideViewOpacity'),
   turnAnimationMs: document.getElementById('turnAnimationMs'),
   idleRandomFlipEnabled: document.getElementById('idleRandomFlipEnabled'),
   idleRandomFlipDelaySec: document.getElementById('idleRandomFlipDelaySec'),
   idleRandomFlipIntervalSec: document.getElementById('idleRandomFlipIntervalSec'),
   pageBackground: document.getElementById('pageBackground'),
+  pageBackgroundOpacity: document.getElementById('pageBackgroundOpacity'),
   pageWidth: document.getElementById('pageWidth'),
   pageHeight: document.getElementById('pageHeight'),
   settingsHoldSeconds: document.getElementById('settingsHoldSeconds'),
@@ -70,6 +73,7 @@ function hasPageData(rawPage) {
 
 function normalizeDesign() {
   const design = state.config.design || {};
+  const page = design.page || {};
   state.config.design = {
     ...design,
     appBackgroundColor: String(design.appBackgroundColor || '#101319'),
@@ -78,9 +82,18 @@ function normalizeDesign() {
     innerPagePaddingY: Number(design.innerPagePaddingY ?? design.innerPagePadding ?? 24),
     sideViewTexture: String(design.sideViewTexture || ''),
     sideViewMaxWidth: Number(design.sideViewMaxWidth ?? 68),
+    sideViewColor: String(design.sideViewColor || '#c8b79b'),
+    sideViewOpacity: Number(design.sideViewOpacity ?? 1),
     idleRandomFlipEnabled: Boolean(design.idleRandomFlipEnabled),
     idleRandomFlipDelaySec: Number(design.idleRandomFlipDelaySec ?? 45),
-    idleRandomFlipIntervalSec: Number(design.idleRandomFlipIntervalSec ?? 8)
+    idleRandomFlipIntervalSec: Number(design.idleRandomFlipIntervalSec ?? 8),
+    page: {
+      ...page,
+      background: String(page.background || '#ffffff'),
+      backgroundOpacity: Number(page.backgroundOpacity ?? 1),
+      width: Number(page.width ?? 900),
+      height: Number(page.height ?? 1200)
+    }
   };
 }
 
@@ -109,11 +122,14 @@ function readPrimitiveInputs() {
   state.config.design.innerPagePaddingY = Number(els.innerPagePaddingY.value || 24);
   state.config.design.sideViewTexture = els.sideViewTexture.value.trim();
   state.config.design.sideViewMaxWidth = Number(els.sideViewMaxWidth.value || 68);
+  state.config.design.sideViewColor = els.sideViewColor.value || '#c8b79b';
+  state.config.design.sideViewOpacity = Number(els.sideViewOpacity.value || 1);
   state.config.design.turnAnimationMs = Number(els.turnAnimationMs.value || 700);
   state.config.design.idleRandomFlipEnabled = Boolean(els.idleRandomFlipEnabled.checked);
   state.config.design.idleRandomFlipDelaySec = Number(els.idleRandomFlipDelaySec.value || 45);
   state.config.design.idleRandomFlipIntervalSec = Number(els.idleRandomFlipIntervalSec.value || 8);
   state.config.design.page.background = els.pageBackground.value || '#ffffff';
+  state.config.design.page.backgroundOpacity = Number(els.pageBackgroundOpacity.value || 1);
   state.config.design.page.width = Number(els.pageWidth.value || 900);
   state.config.design.page.height = Number(els.pageHeight.value || 1200);
   state.config.mode.settingsHoldSeconds = Number(els.settingsHoldSeconds.value || 10);
@@ -133,11 +149,14 @@ function writePrimitiveInputs() {
   els.innerPagePaddingY.value = String(state.config.design.innerPagePaddingY ?? state.config.design.innerPagePadding ?? 24);
   els.sideViewTexture.value = state.config.design.sideViewTexture || '';
   els.sideViewMaxWidth.value = String(state.config.design.sideViewMaxWidth ?? 68);
+  els.sideViewColor.value = state.config.design.sideViewColor || '#c8b79b';
+  els.sideViewOpacity.value = String(state.config.design.sideViewOpacity ?? 1);
   els.turnAnimationMs.value = String(state.config.design.turnAnimationMs ?? 700);
   els.idleRandomFlipEnabled.checked = Boolean(state.config.design.idleRandomFlipEnabled);
   els.idleRandomFlipDelaySec.value = String(state.config.design.idleRandomFlipDelaySec ?? 45);
   els.idleRandomFlipIntervalSec.value = String(state.config.design.idleRandomFlipIntervalSec ?? 8);
   els.pageBackground.value = state.config.design.page.background || '#ffffff';
+  els.pageBackgroundOpacity.value = String(state.config.design.page.backgroundOpacity ?? 1);
   els.pageWidth.value = String(state.config.design.page.width ?? 900);
   els.pageHeight.value = String(state.config.design.page.height ?? 1200);
   els.settingsHoldSeconds.value = String(state.config.mode.settingsHoldSeconds ?? 10);

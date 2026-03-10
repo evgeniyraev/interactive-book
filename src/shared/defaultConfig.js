@@ -32,12 +32,15 @@ const defaultConfig = {
     innerPagePaddingY: 24,
     sideViewTexture: '',
     sideViewMaxWidth: 68,
+    sideViewColor: '#c8b79b',
+    sideViewOpacity: 1,
     turnAnimationMs: 700,
     idleRandomFlipEnabled: false,
     idleRandomFlipDelaySec: 45,
     idleRandomFlipIntervalSec: 8,
     page: {
       background: '#ffffff',
+      backgroundOpacity: 1,
       width: 900,
       height: 1200
     }
