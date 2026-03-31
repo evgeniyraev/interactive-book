@@ -34,6 +34,9 @@ jobs:
         run: npm run dist -- --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INTERACTIVE_BOOK_SUPERADMIN_USERNAME: ${{ secrets.INTERACTIVE_BOOK_SUPERADMIN_USERNAME }}
+          INTERACTIVE_BOOK_SUPERADMIN_PASSWORD: ${{ secrets.INTERACTIVE_BOOK_SUPERADMIN_PASSWORD }}
+          INTERACTIVE_BOOK_SUPERADMIN_DISPLAY_NAME: ${{ secrets.INTERACTIVE_BOOK_SUPERADMIN_DISPLAY_NAME }}
 
       - name: Upload build artifacts
         if: ${{ always() }}

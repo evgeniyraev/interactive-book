@@ -136,29 +136,27 @@
                   </span>
                 </div>
 
-                <div class="editor-shell">
-                  <div id="richEditor" class="rich-editor"></div>
+                <div id="overflowNotice" class="overflow-notice hidden">
+                  <span id="overflowMessage"></span>
+                  <button id="splitOverflowButton" type="button" class="secondary">Create continuation page</button>
                 </div>
 
-                <div id="imageInspector" class="image-inspector hidden">
-                  <strong>Selected image</strong>
-                  <label>
-                    Wrap style
-                    <select id="selectedImageLayout">
-                      <option value="full">No wrap</option>
-                      <option value="left">Wrap left</option>
-                      <option value="right">Wrap right</option>
-                      <option value="center">Centered</option>
-                    </select>
-                  </label>
+                <div class="editor-workspace">
+                  <div id="editorShell" class="editor-shell">
+                    <div id="richEditor" class="rich-editor"></div>
 
-                  <label>
-                    Width
-                    <input id="selectedImageWidth" type="range" min="20" max="100" step="5" />
-                  </label>
+                    <div id="selectedImageToolbar" class="selected-image-toolbar hidden">
+                      <button id="alignImageLeftButton" type="button" class="secondary">Left</button>
+                      <button id="alignImageCenterButton" type="button" class="secondary">Center</button>
+                      <button id="alignImageRightButton" type="button" class="secondary">Right</button>
+                      <button id="removeSelectedImageButton" type="button" class="secondary">Remove</button>
+                    </div>
 
-                  <button id="removeSelectedImageButton" type="button" class="secondary">Remove image</button>
+                    <button id="selectedImageResizeHandle" type="button" class="selected-image-resize hidden" aria-label="Resize image"></button>
+                  </div>
                 </div>
+
+                <div id="paginationLab" class="pagination-lab" aria-hidden="true"></div>
               </div>
 
               <div id="imageEditorPanel" class="hidden">
@@ -188,16 +186,13 @@
                   </label>
                   <label>
                     Role
-                    <select id="newRole">
-                      <option value="editor">Editor</option>
-                      <option value="admin">Admin</option>
-                    </select>
+                    <select id="newRole"></select>
                   </label>
                   <label>
                     Password
                     <input id="newPassword" type="password" minlength="8" required />
                   </label>
-                  <button type="submit">Create user</button>
+                  <button id="createUserButton" type="submit">Create user</button>
                 </form>
 
                 <div id="usersList" class="users-list"></div>
@@ -215,6 +210,7 @@
     <input id="assetUploadInput" type="file" accept="image/*" hidden />
 
     <script src="/vendor/quill/quill.js"></script>
+    <script src="/renderer-static/richContentRuntime.js"></script>
     <script src="./admin.js"></script>
   </body>
 </html>

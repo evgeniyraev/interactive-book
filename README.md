@@ -17,7 +17,8 @@ Desktop fullscreen interactive book app with two runtime modes:
   - rich WYSIWYG page editing powered by Quill
   - inline images with wrap-left, wrap-right, centered, or no-wrap layout
   - intentional page breaks inside rich content
-  - user bootstrap, login, and admin/editor user management
+  - everyone who can log in can edit content
+  - writer/admin/superadmin permission split for user management
 - Runtime pagination of rich content into book pages so long text can continue across multiple pages in the app.
 - Hidden settings trigger in the viewer: hold top-left corner for `10` seconds (configurable).
 - Auto-update integration via GitHub Releases using `electron-updater`.
@@ -52,6 +53,8 @@ Run with the admin server forced on:
 npm run dev:admin
 ```
 
+Development runs compile a built-in superadmin with credentials `admin` / `admin` unless overridden in the environment.
+
 For production-style run:
 
 ```bash
@@ -65,6 +68,20 @@ npm run start:admin
 ```
 
 You can also enable the admin server from the desktop settings window and then use the "Open admin panel" button.
+
+## User roles
+
+- `writer`: can log in and edit content.
+- `admin`: can create and manage writers.
+- `superadmin`: can create and manage admins and writers. This account is compiled from environment variables and is not editable from the admin UI.
+
+Production builds expect these environment variables during the build step:
+
+```bash
+INTERACTIVE_BOOK_SUPERADMIN_USERNAME
+INTERACTIVE_BOOK_SUPERADMIN_PASSWORD
+INTERACTIVE_BOOK_SUPERADMIN_DISPLAY_NAME
+```
 
 ## GitHub build and release
 

@@ -5,6 +5,7 @@ const { app } = require('electron');
 const { getConfig, setConfig, getDataRoot } = require('./configManager');
 const { copyManyBuffersToAssets } = require('./contentManager');
 const {
+  canManageUsers,
   SESSION_COOKIE_NAME,
   bootstrapFirstAdmin,
   createUser,
@@ -12,6 +13,7 @@ const {
   getUserById,
   hasUsers,
   listUsers,
+  needsBootstrap,
   updateUser,
   verifyCredentials
 } = require('./userManager');
@@ -43,7 +45,8 @@ function publicUser(user) {
     username: user.username,
     displayName: user.displayName,
     role: user.role,
-    isActive: user.isActive
+    isActive: user.isActive,
+    isBuiltin: Boolean(user.isBuiltin)
   };
 }
 
@@ -105,10 +108,10 @@ class AdminServer {
       next();
     };
 
-    const requireAdmin = async (request, response, next) => {
+    const requireUserManager = async (request, response, next) => {
       await requireAuthenticated(request, response, async () => {
-        if (request.currentUser.role !== 'admin') {
-          response.status(403).json({ error: 'Admin access is required.' });
+        if (!canManageUsers(request.currentUser)) {
+          response.status(403).json({ error: 'Admin or superadmin access is required.' });
           return;
         }
 
@@ -118,7 +121,7 @@ class AdminServer {
 
     application.get('/api/bootstrap-status', async (_request, response) => {
       response.json({
-        bootstrapRequired: !(await hasUsers())
+        bootstrapRequired: needsBootstrap() && !(await hasUsers())
       });
     });
 
@@ -223,33 +226,33 @@ class AdminServer {
       }
     });
 
-    application.get('/api/users', requireAdmin, async (_request, response) => {
+    application.get('/api/users', requireUserManager, async (_request, response) => {
       response.json({
         users: await listUsers()
       });
     });
 
-    application.post('/api/users', requireAdmin, async (request, response) => {
+    application.post('/api/users', requireUserManager, async (request, response) => {
       try {
-        const user = await createUser(request.body || {});
+        const user = await createUser(request.currentUser, request.body || {});
         response.json({ user });
       } catch (error) {
         response.status(400).json({ error: error.message });
       }
     });
 
-    application.put('/api/users/:userId', requireAdmin, async (request, response) => {
+    application.put('/api/users/:userId', requireUserManager, async (request, response) => {
       try {
-        const user = await updateUser(request.params.userId, request.body || {});
+        const user = await updateUser(request.currentUser, request.params.userId, request.body || {});
         response.json({ user });
       } catch (error) {
         response.status(400).json({ error: error.message });
       }
     });
 
-    application.delete('/api/users/:userId', requireAdmin, async (request, response) => {
+    application.delete('/api/users/:userId', requireUserManager, async (request, response) => {
       try {
-        await deleteUser(request.params.userId);
+        await deleteUser(request.currentUser, request.params.userId);
         this.destroySessionByUserId(request.params.userId);
         response.json({ ok: true });
       } catch (error) {
@@ -263,6 +266,7 @@ class AdminServer {
       express.static(path.join(app.getAppPath(), 'node_modules/quill/dist'))
     );
     application.use('/shared', express.static(path.join(__dirname, '../shared')));
+    application.use('/renderer-static', express.static(path.join(__dirname, '../renderer')));
     application.use('/admin', express.static(path.join(__dirname, '../admin')));
     application.get('/', (_request, response) => {
       response.redirect('/admin/');
