@@ -31,12 +31,31 @@ jobs:
         run: npm ci
 
       - name: Build distributables
-        run: npm run dist -- --publish always
+        run: npm run dist -- --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INTERACTIVE_BOOK_SUPERADMIN_USERNAME: ${{ secrets.INTERACTIVE_BOOK_SUPERADMIN_USERNAME }}
           INTERACTIVE_BOOK_SUPERADMIN_PASSWORD: ${{ secrets.INTERACTIVE_BOOK_SUPERADMIN_PASSWORD }}
           INTERACTIVE_BOOK_SUPERADMIN_DISPLAY_NAME: ${{ secrets.INTERACTIVE_BOOK_SUPERADMIN_DISPLAY_NAME }}
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/*.exe
+            dist/*.msi
+            dist/*.dmg
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/*.zip
+            dist/*.blockmap
+            dist/*.yml
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload build artifacts
         if: ${{ always() }}

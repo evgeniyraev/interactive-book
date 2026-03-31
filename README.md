@@ -88,8 +88,8 @@ INTERACTIVE_BOOK_SUPERADMIN_DISPLAY_NAME
 Workflow: `.github/workflows/build.yml`
 
 - Triggered on tags matching `v*` and manual dispatch.
-- Builds for macOS, Linux, and Windows.
-- Publishes artifacts to GitHub Releases via `GH_TOKEN`.
+- Currently builds the Windows release from `windows-latest`.
+- Creates a GitHub Release automatically for tag pushes and uploads the built artifacts to that release.
 
 Repository in `package.json` must point to your actual GitHub repo:
 
