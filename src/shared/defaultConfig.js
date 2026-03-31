@@ -1,22 +1,4 @@
-const { randomUUID } = require('node:crypto');
-
-function createDefaultPage(text = 'Welcome to your interactive book.') {
-  return {
-    id: randomUUID(),
-    type: 'text',
-    text,
-    imagePath: ''
-  };
-}
-
-function createDefaultSpecialPage(text) {
-  return {
-    id: randomUUID(),
-    type: 'text',
-    text,
-    imagePath: ''
-  };
-}
+const { createDocumentPage } = require('./contentModel');
 
 const defaultConfig = {
   mode: {
@@ -46,21 +28,24 @@ const defaultConfig = {
     }
   },
   content: {
-    frontCover: createDefaultSpecialPage('Book Title'),
-    innerFront: createDefaultSpecialPage(''),
-    innerBack: createDefaultSpecialPage(''),
-    backCover: createDefaultSpecialPage(''),
-    pages: [createDefaultPage()]
+    frontCover: createDocumentPage({ text: 'Book Title' }),
+    innerFront: createDocumentPage({ text: '' }),
+    innerBack: createDocumentPage({ text: '' }),
+    backCover: createDocumentPage({ text: '' }),
+    pages: [createDocumentPage()]
   },
   autoupdate: {
     policy: 'everything',
     detectExternalContent: false,
     autoCheckOnLaunch: true,
     lastImportedHash: ''
+  },
+  adminServer: {
+    enabled: false,
+    port: 47831
   }
 };
 
 module.exports = {
-  defaultConfig,
-  createDefaultPage
+  defaultConfig
 };

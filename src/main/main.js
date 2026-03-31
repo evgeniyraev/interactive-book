@@ -1,6 +1,6 @@
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const {
   getConfig,
   setConfig,
@@ -16,6 +16,7 @@ const {
 } = require('./contentManager');
 const { UpdateManager } = require('./updateManager');
 const { ExternalSyncManager } = require('./externalSyncManager');
+const { AdminServer } = require('./adminServer');
 
 const isDev = !app.isPackaged;
 let mainWindow = null;
@@ -23,11 +24,40 @@ let settingsWindow = null;
 
 const updateManager = new UpdateManager();
 const externalSyncManager = new ExternalSyncManager();
+const adminServer = new AdminServer({
+  onContentSaved: () => {
+    notifyWindows('content-updated', { source: 'admin-panel-save' });
+  },
+  onStateChanged: (payload) => {
+    notifyWindows('admin-server-state', payload);
+  }
+});
 
 function notifyWindows(channel, payload) {
   BrowserWindow.getAllWindows().forEach((window) => {
     window.webContents.send(channel, payload);
   });
+}
+
+function getAdminServerPort() {
+  const configured = Number(getConfig().adminServer?.port);
+  if (Number.isFinite(configured) && configured >= 1024 && configured <= 65535) {
+    return configured;
+  }
+
+  return 47831;
+}
+
+async function startOrStopAdminServer(forceStart = false) {
+  const config = getConfig();
+  const shouldRun = forceStart || Boolean(config.adminServer?.enabled);
+
+  if (shouldRun) {
+    return adminServer.start(getAdminServerPort());
+  }
+
+  await adminServer.stop();
+  return { url: '', port: null };
 }
 
 function createMainWindow() {
@@ -109,6 +139,7 @@ function registerIpcHandlers() {
   ipcMain.handle('config:set', (_, partialConfig) => {
     const config = setConfig(partialConfig);
     startOrStopExternalSync();
+    startOrStopAdminServer().catch(() => {});
     notifyWindows('content-updated', { source: 'settings-save' });
     return config;
   });
@@ -168,6 +199,21 @@ function registerIpcHandlers() {
     updateManager.installDownloadedUpdate();
     return { ok: true };
   });
+
+  ipcMain.handle('admin-server:get-status', () => ({
+    running: adminServer.isRunning(),
+    url: adminServer.getUrl(),
+    port: getAdminServerPort()
+  }));
+
+  ipcMain.handle('admin-server:open', async () => {
+    const status = await startOrStopAdminServer(true);
+    await shell.openExternal(`${status.url}/admin/`);
+    return {
+      running: true,
+      ...status
+    };
+  });
 }
 
 app.whenReady().then(async () => {
@@ -180,6 +226,7 @@ app.whenReady().then(async () => {
   }
 
   startOrStopExternalSync();
+  await startOrStopAdminServer(process.argv.includes('--admin-server'));
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -192,4 +239,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  adminServer.stop().catch(() => {});
 });

@@ -4,13 +4,6 @@ const state = {
   config: null
 };
 
-const FIXED_PAGE_META = [
-  { key: 'frontCover', label: 'Front cover' },
-  { key: 'innerFront', label: 'Front inner (required)' },
-  { key: 'innerBack', label: 'Back inner (required)' },
-  { key: 'backCover', label: 'Back cover' }
-];
-
 const els = {
   appBackgroundColor: document.getElementById('appBackgroundColor'),
   backgroundImage: document.getElementById('backgroundImage'),
@@ -32,12 +25,13 @@ const els = {
   pageWidth: document.getElementById('pageWidth'),
   pageHeight: document.getElementById('pageHeight'),
   settingsHoldSeconds: document.getElementById('settingsHoldSeconds'),
-  fixedPagesList: document.getElementById('fixedPagesList'),
-  pagesList: document.getElementById('pagesList'),
-  dropImagesZone: document.getElementById('dropImagesZone'),
   updatePolicy: document.getElementById('updatePolicy'),
   detectExternalContent: document.getElementById('detectExternalContent'),
   autoCheckOnLaunch: document.getElementById('autoCheckOnLaunch'),
+  adminServerEnabled: document.getElementById('adminServerEnabled'),
+  adminServerPort: document.getElementById('adminServerPort'),
+  adminServerState: document.getElementById('adminServerState'),
+  adminServerUrl: document.getElementById('adminServerUrl'),
   status: document.getElementById('status')
 };
 
@@ -45,71 +39,8 @@ function setStatus(message) {
   els.status.textContent = message;
 }
 
-function createId() {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-
-  return `page-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
-}
-
-function normalizePage(rawPage, fallbackText = '') {
-  const hasLegacyTitle = rawPage?.type !== 'image' && rawPage?.title;
-  return {
-    id: rawPage?.id || createId(),
-    type: rawPage?.type === 'image' ? 'image' : 'text',
-    text: String(rawPage?.text || (hasLegacyTitle ? rawPage.title : fallbackText)),
-    imagePath: String(rawPage?.imagePath || '')
-  };
-}
-
-function hasPageData(rawPage) {
-  return Boolean(rawPage && (rawPage.imagePath || rawPage.text || rawPage.title));
-}
-
-function normalizeDesign() {
-  const design = state.config.design || {};
-  const page = design.page || {};
-  state.config.design = {
-    ...design,
-    appBackgroundColor: String(design.appBackgroundColor || '#101319'),
-    edgeZoneWidth: Number(design.edgeZoneWidth ?? 92),
-    innerPagePadding: Number(design.innerPagePadding ?? 24),
-    innerPagePaddingY: Number(design.innerPagePaddingY ?? design.innerPagePadding ?? 24),
-    sideViewTexture: String(design.sideViewTexture || ''),
-    sideViewMaxWidth: Number(design.sideViewMaxWidth ?? 68),
-    sideViewColor: String(design.sideViewColor || '#c8b79b'),
-    sideViewOpacity: Number(design.sideViewOpacity ?? 1),
-    idleRandomFlipEnabled: Boolean(design.idleRandomFlipEnabled),
-    idleRandomFlipDelaySec: Number(design.idleRandomFlipDelaySec ?? 45),
-    idleRandomFlipIntervalSec: Number(design.idleRandomFlipIntervalSec ?? 8),
-    page: {
-      ...page,
-      background: String(page.background || '#ffffff'),
-      backgroundOpacity: Number(page.backgroundOpacity ?? 1),
-      width: Number(page.width ?? 900),
-      height: Number(page.height ?? 1200)
-    }
-  };
-}
-
-function normalizeContent() {
-  const content = state.config.content || {};
-  const legacyCovers = content.covers || {};
-  const frontSource = hasPageData(content.frontCover) ? content.frontCover : legacyCovers.front;
-  const backSource = hasPageData(content.backCover) ? content.backCover : legacyCovers.back;
-
-  state.config.content = {
-    pages: (content.pages || []).map((page) => normalizePage(page)),
-    frontCover: normalizePage(frontSource, 'Book Title'),
-    innerFront: normalizePage(content.innerFront, ''),
-    innerBack: normalizePage(content.innerBack, ''),
-    backCover: normalizePage(backSource, '')
-  };
 }
 
 function readPrimitiveInputs() {
@@ -137,6 +68,9 @@ function readPrimitiveInputs() {
   state.config.autoupdate.policy = els.updatePolicy.value;
   state.config.autoupdate.detectExternalContent = Boolean(els.detectExternalContent.checked);
   state.config.autoupdate.autoCheckOnLaunch = Boolean(els.autoCheckOnLaunch.checked);
+
+  state.config.adminServer.enabled = Boolean(els.adminServerEnabled.checked);
+  state.config.adminServer.port = Number(els.adminServerPort.value || 47831);
 }
 
 function writePrimitiveInputs() {
@@ -146,7 +80,7 @@ function writePrimitiveInputs() {
   els.pageOffsetX.value = String(state.config.design.pageOffsetX ?? 0);
   els.edgeZoneWidth.value = String(state.config.design.edgeZoneWidth ?? 92);
   els.innerPagePadding.value = String(state.config.design.innerPagePadding ?? 24);
-  els.innerPagePaddingY.value = String(state.config.design.innerPagePaddingY ?? state.config.design.innerPagePadding ?? 24);
+  els.innerPagePaddingY.value = String(state.config.design.innerPagePaddingY ?? 24);
   els.sideViewTexture.value = state.config.design.sideViewTexture || '';
   els.sideViewMaxWidth.value = String(state.config.design.sideViewMaxWidth ?? 68);
   els.sideViewColor.value = state.config.design.sideViewColor || '#c8b79b';
@@ -160,218 +94,33 @@ function writePrimitiveInputs() {
   els.pageWidth.value = String(state.config.design.page.width ?? 900);
   els.pageHeight.value = String(state.config.design.page.height ?? 1200);
   els.settingsHoldSeconds.value = String(state.config.mode.settingsHoldSeconds ?? 10);
-
   els.updatePolicy.value = state.config.autoupdate.policy || 'everything';
   els.detectExternalContent.checked = Boolean(state.config.autoupdate.detectExternalContent);
   els.autoCheckOnLaunch.checked = Boolean(state.config.autoupdate.autoCheckOnLaunch);
+  els.adminServerEnabled.checked = Boolean(state.config.adminServer?.enabled);
+  els.adminServerPort.value = String(state.config.adminServer?.port ?? 47831);
 }
 
-function createPageCard(page, label, options = {}) {
-  const card = document.createElement('div');
-  card.className = 'page-card';
+function renderServerState(serverStatus) {
+  const running = Boolean(serverStatus?.running);
+  const url = serverStatus?.url || '';
 
-  const title = document.createElement('strong');
-  title.textContent = label;
-
-  const body = document.createElement(page.type === 'text' ? 'textarea' : 'input');
-  if (page.type === 'text') {
-    body.value = page.text || '';
-    body.placeholder = 'Page text';
-    body.addEventListener('input', () => {
-      page.text = body.value;
-    });
-  } else {
-    body.type = 'text';
-    body.value = page.imagePath || '';
-    body.readOnly = true;
-  }
-
-  const actions = document.createElement('div');
-  actions.className = 'page-actions';
-
-  const toggleBtn = document.createElement('button');
-  toggleBtn.type = 'button';
-  toggleBtn.textContent = page.type === 'text' ? 'Switch to image' : 'Switch to text';
-  toggleBtn.addEventListener('click', async () => {
-    if (page.type === 'text') {
-      page.type = 'image';
-      page.imagePath = '';
-      setStatus('Page switched to image. Choose image to display.');
-    } else {
-      page.type = 'text';
-      page.text = page.text || '';
-    }
-
-    options.onRefresh?.();
-  });
-  actions.append(toggleBtn);
-
-  if (page.type === 'image') {
-    const pickBtn = document.createElement('button');
-    pickBtn.type = 'button';
-    pickBtn.textContent = 'Choose image';
-    pickBtn.addEventListener('click', async () => {
-      const result = await window.bookApi.pickAsset('image');
-      if (!result.canceled) {
-        page.imagePath = result.relativePath;
-        options.onRefresh?.();
-      }
-    });
-    actions.append(pickBtn);
-  }
-
-  if (options.allowMove) {
-    const upBtn = document.createElement('button');
-    upBtn.textContent = 'Move up';
-    upBtn.type = 'button';
-    upBtn.disabled = options.index === 0;
-    upBtn.addEventListener('click', () => {
-      options.onMove?.(options.index, -1);
-    });
-
-    const downBtn = document.createElement('button');
-    downBtn.textContent = 'Move down';
-    downBtn.type = 'button';
-    downBtn.disabled = options.index === options.maxIndex;
-    downBtn.addEventListener('click', () => {
-      options.onMove?.(options.index, 1);
-    });
-
-    actions.append(upBtn, downBtn);
-  }
-
-  if (options.allowRemove) {
-    const removeBtn = document.createElement('button');
-    removeBtn.textContent = 'Remove';
-    removeBtn.type = 'button';
-    removeBtn.addEventListener('click', () => {
-      options.onRemove?.(options.index);
-    });
-    actions.append(removeBtn);
-  }
-
-  card.append(title, body, actions);
-  return card;
-}
-
-function movePage(index, direction) {
-  const target = index + direction;
-  if (target < 0 || target >= state.config.content.pages.length) {
-    return;
-  }
-
-  const [page] = state.config.content.pages.splice(index, 1);
-  state.config.content.pages.splice(target, 0, page);
-  renderPages();
-}
-
-function renderFixedPages() {
-  els.fixedPagesList.innerHTML = '';
-
-  for (const meta of FIXED_PAGE_META) {
-    const page = state.config.content[meta.key];
-    els.fixedPagesList.append(
-      createPageCard(page, meta.label, {
-        allowMove: false,
-        allowRemove: false,
-        onRefresh: renderFixedPages
-      })
-    );
-  }
-}
-
-function renderPages() {
-  els.pagesList.innerHTML = '';
-  state.config.content.pages.forEach((page, index) => {
-    els.pagesList.append(
-      createPageCard(page, `Page #${index + 1}`, {
-        allowMove: true,
-        allowRemove: true,
-        index,
-        maxIndex: state.config.content.pages.length - 1,
-        onRefresh: renderPages,
-        onMove: movePage,
-        onRemove: (removeIndex) => {
-          state.config.content.pages.splice(removeIndex, 1);
-          renderPages();
-        }
-      })
-    );
-  });
-}
-
-function appendImagePages(assetPaths) {
-  for (const imagePath of assetPaths) {
-    state.config.content.pages.push({
-      id: createId(),
-      type: 'image',
-      text: '',
-      imagePath
-    });
-  }
-
-  renderPages();
-}
-
-async function filesToImportPayload(files) {
-  const payload = [];
-  const sortedFiles = Array.from(files || [])
-    .filter(Boolean)
-    .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
-
-  for (const file of sortedFiles) {
-    if (file.type && !file.type.startsWith('image/')) {
-      continue;
-    }
-
-    payload.push({
-      name: file.name || 'image.png',
-      data: await file.arrayBuffer()
-    });
-  }
-
-  return payload;
-}
-
-async function importImagesFromFiles(files) {
-  const payload = await filesToImportPayload(files);
-  if (payload.length === 0) {
-    setStatus('No valid image files were imported.');
-    return;
-  }
-
-  const imported = await window.bookApi.importAssetsFromFiles(payload);
-  if (!imported || imported.length === 0) {
-    setStatus('No valid image files were imported.');
-    return;
-  }
-
-  appendImagePages(imported);
-  setStatus(`Added ${imported.length} image page(s). Save to apply.`);
+  els.adminServerState.textContent = running ? 'Running' : 'Stopped';
+  els.adminServerState.dataset.running = String(running);
+  els.adminServerUrl.textContent = url || 'Start the local admin server to open the browser panel.';
 }
 
 async function loadConfig() {
   state.config = clone(await window.bookApi.getConfig());
-  normalizeDesign();
-  normalizeContent();
   writePrimitiveInputs();
-  renderFixedPages();
-  renderPages();
+  renderServerState(await window.bookApi.getAdminServerStatus());
 }
 
 async function saveConfig() {
   readPrimitiveInputs();
-  normalizeDesign();
-  normalizeContent();
-
-  const updated = await window.bookApi.setConfig(state.config);
-  state.config = clone(updated);
-  normalizeDesign();
-  normalizeContent();
-
+  state.config = clone(await window.bookApi.setConfig(state.config));
   writePrimitiveInputs();
-  renderFixedPages();
-  renderPages();
+  renderServerState(await window.bookApi.getAdminServerStatus());
   setStatus('Settings saved.');
 }
 
@@ -397,58 +146,6 @@ async function pickAssetAndAssign(kind) {
   }
 }
 
-async function addTextPage() {
-  state.config.content.pages.push({
-    id: createId(),
-    type: 'text',
-    text: 'New page text',
-    imagePath: ''
-  });
-  renderPages();
-}
-
-async function addImagePage() {
-  const result = await window.bookApi.pickAsset('image');
-  if (result.canceled) {
-    return;
-  }
-
-  appendImagePages([result.relativePath]);
-}
-
-function bindDropZone() {
-  const filePicker = document.createElement('input');
-  filePicker.type = 'file';
-  filePicker.accept = 'image/*';
-  filePicker.multiple = true;
-  filePicker.style.display = 'none';
-  document.body.append(filePicker);
-
-  filePicker.addEventListener('change', async () => {
-    await importImagesFromFiles(filePicker.files || []);
-    filePicker.value = '';
-  });
-
-  els.dropImagesZone.addEventListener('click', () => {
-    filePicker.click();
-  });
-
-  els.dropImagesZone.addEventListener('dragover', (event) => {
-    event.preventDefault();
-    els.dropImagesZone.classList.add('active');
-  });
-
-  els.dropImagesZone.addEventListener('dragleave', () => {
-    els.dropImagesZone.classList.remove('active');
-  });
-
-  els.dropImagesZone.addEventListener('drop', async (event) => {
-    event.preventDefault();
-    els.dropImagesZone.classList.remove('active');
-    await importImagesFromFiles(event.dataTransfer?.files || []);
-  });
-}
-
 function bindEvents() {
   document.querySelectorAll('[data-pick]').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -466,11 +163,15 @@ function bindEvents() {
     });
   });
 
-  bindDropZone();
-
-  document.getElementById('addTextPage').addEventListener('click', addTextPage);
-  document.getElementById('addImagePage').addEventListener('click', addImagePage);
   document.getElementById('saveAll').addEventListener('click', saveConfig);
+
+  document.getElementById('openAdminPanel').addEventListener('click', async () => {
+    readPrimitiveInputs();
+    state.config = clone(await window.bookApi.setConfig(state.config));
+    const serverStatus = await window.bookApi.openAdminPanel();
+    renderServerState(serverStatus);
+    setStatus('Admin panel opened in the browser.');
+  });
 
   document.getElementById('checkUpdates').addEventListener('click', async () => {
     const result = await window.bookApi.checkForUpdates();
@@ -516,6 +217,10 @@ function bindEvents() {
 
   window.bookApi.onUpdateDownloaded((payload) => {
     setStatus(`Update ${payload.version} downloaded. Click Install update.`);
+  });
+
+  window.bookApi.onAdminServerStateChanged((payload) => {
+    renderServerState(payload);
   });
 }
 

@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Interactive Book Admin</title>
+    <link rel="stylesheet" href="/vendor/quill/quill.snow.css" />
+    <link rel="stylesheet" href="/shared/rich-content.css" />
+    <link rel="stylesheet" href="./admin.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div>
+          <h1>Interactive Book Admin</h1>
+          <p>Rich page editing, pagination-ready content, and local user management.</p>
+        </div>
+        <div class="topbar-actions">
+          <span id="sessionBadge" class="session-badge"></span>
+          <button id="logoutButton" type="button" class="secondary">Log out</button>
+        </div>
+      </header>
+
+      <main>
+        <section id="authView" class="auth-grid">
+          <form id="bootstrapForm" class="card hidden">
+            <h2>Create First Admin</h2>
+            <label>
+              Username
+              <input id="bootstrapUsername" required />
+            </label>
+            <label>
+              Display name
+              <input id="bootstrapDisplayName" />
+            </label>
+            <label>
+              Password
+              <input id="bootstrapPassword" type="password" minlength="8" required />
+            </label>
+            <button type="submit">Create admin and continue</button>
+          </form>
+
+          <form id="loginForm" class="card hidden">
+            <h2>Sign In</h2>
+            <label>
+              Username
+              <input id="loginUsername" required />
+            </label>
+            <label>
+              Password
+              <input id="loginPassword" type="password" required />
+            </label>
+            <button type="submit">Log in</button>
+          </form>
+        </section>
+
+        <section id="workspaceView" class="workspace hidden">
+          <aside class="sidebar card">
+            <div class="sidebar-head">
+              <h2>Book Items</h2>
+              <p id="serverUrl"></p>
+            </div>
+
+            <div class="sidebar-actions">
+              <button id="addDocumentButton" type="button">Add rich section</button>
+              <button id="addImagePageButton" type="button">Add image page</button>
+              <button id="saveContentButton" type="button" class="primary">Save content</button>
+            </div>
+
+            <div id="itemList" class="item-list"></div>
+          </aside>
+
+          <section class="editor-area">
+            <nav class="pane-tabs">
+              <button id="pagesTab" type="button" class="active">Pages</button>
+              <button id="usersTab" type="button">Users</button>
+            </nav>
+
+            <section id="pagesPane" class="card pane">
+              <div class="page-meta-grid">
+                <label>
+                  Label
+                  <input id="itemTitleInput" />
+                </label>
+
+                <label>
+                  Type
+                  <select id="itemTypeSelect">
+                    <option value="document">Rich document</option>
+                    <option value="image">Image page</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="row-actions">
+                <button id="moveUpButton" type="button" class="secondary">Move up</button>
+                <button id="moveDownButton" type="button" class="secondary">Move down</button>
+                <button id="removeItemButton" type="button" class="secondary">Remove</button>
+              </div>
+
+              <div id="documentEditorPanel">
+                <div id="editorToolbar">
+                  <span class="ql-formats">
+                    <select class="ql-header">
+                      <option selected></option>
+                      <option value="1"></option>
+                      <option value="2"></option>
+                      <option value="3"></option>
+                    </select>
+                    <select class="ql-size">
+                      <option value="small"></option>
+                      <option selected></option>
+                      <option value="large"></option>
+                      <option value="huge"></option>
+                    </select>
+                  </span>
+                  <span class="ql-formats">
+                    <button class="ql-bold"></button>
+                    <button class="ql-italic"></button>
+                    <button class="ql-underline"></button>
+                    <button class="ql-blockquote"></button>
+                  </span>
+                  <span class="ql-formats">
+                    <button class="ql-list" value="ordered"></button>
+                    <button class="ql-list" value="bullet"></button>
+                    <button class="ql-link"></button>
+                  </span>
+                  <span class="ql-formats">
+                    <select class="ql-color"></select>
+                    <select class="ql-background"></select>
+                    <select class="ql-align"></select>
+                  </span>
+                  <span class="ql-formats">
+                    <button id="insertInlineImageButton" type="button" class="toolbar-button">Image</button>
+                    <button id="insertPageBreakButton" type="button" class="toolbar-button">Page break</button>
+                  </span>
+                </div>
+
+                <div class="editor-shell">
+                  <div id="richEditor" class="rich-editor"></div>
+                </div>
+
+                <div id="imageInspector" class="image-inspector hidden">
+                  <strong>Selected image</strong>
+                  <label>
+                    Wrap style
+                    <select id="selectedImageLayout">
+                      <option value="full">No wrap</option>
+                      <option value="left">Wrap left</option>
+                      <option value="right">Wrap right</option>
+                      <option value="center">Centered</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Width
+                    <input id="selectedImageWidth" type="range" min="20" max="100" step="5" />
+                  </label>
+
+                  <button id="removeSelectedImageButton" type="button" class="secondary">Remove image</button>
+                </div>
+              </div>
+
+              <div id="imageEditorPanel" class="hidden">
+                <div class="row-actions">
+                  <button id="choosePageImageButton" type="button">Choose image</button>
+                </div>
+                <input id="pageImagePath" readonly />
+                <div id="pageImagePreview" class="image-preview">No image selected.</div>
+              </div>
+            </section>
+
+            <section id="usersPane" class="card pane hidden">
+              <div id="usersLockedMessage" class="hidden">
+                This account can edit pages but cannot manage users.
+              </div>
+
+              <div id="usersAdminContent">
+                <form id="createUserForm" class="user-form">
+                  <h2>Add User</h2>
+                  <label>
+                    Username
+                    <input id="newUsername" required />
+                  </label>
+                  <label>
+                    Display name
+                    <input id="newDisplayName" />
+                  </label>
+                  <label>
+                    Role
+                    <select id="newRole">
+                      <option value="editor">Editor</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </label>
+                  <label>
+                    Password
+                    <input id="newPassword" type="password" minlength="8" required />
+                  </label>
+                  <button type="submit">Create user</button>
+                </form>
+
+                <div id="usersList" class="users-list"></div>
+              </div>
+            </section>
+          </section>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <span id="status"></span>
+      </footer>
+    </div>
+
+    <input id="assetUploadInput" type="file" accept="image/*" hidden />
+
+    <script src="/vendor/quill/quill.js"></script>
+    <script src="./admin.js"></script>
+  </body>
+</html>

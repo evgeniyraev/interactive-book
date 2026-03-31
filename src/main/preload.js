@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld('bookApi', {
   checkForUpdates: () => ipcRenderer.invoke('updates:check'),
   downloadUpdate: () => ipcRenderer.invoke('updates:download'),
   installUpdate: () => ipcRenderer.invoke('updates:install'),
+  getAdminServerStatus: () => ipcRenderer.invoke('admin-server:get-status'),
+  openAdminPanel: () => ipcRenderer.invoke('admin-server:open'),
   onContentUpdated: createListener('content-updated'),
-  onUpdateDownloaded: createListener('update-downloaded')
+  onUpdateDownloaded: createListener('update-downloaded'),
+  onAdminServerStateChanged: createListener('admin-server-state')
 });

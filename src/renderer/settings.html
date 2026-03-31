@@ -129,18 +129,33 @@
       </section>
 
       <section>
-        <h2>Content</h2>
-        <h3>Required Pages</h3>
-        <div id="fixedPagesList" class="pages-list"></div>
+        <h2>Admin Panel</h2>
+        <p>
+          Rich page editing, inline images, page breaks, and user management are now handled in the local browser admin panel.
+        </p>
 
-        <div class="row-actions">
-          <button id="addTextPage" type="button">Add text page</button>
-          <button id="addImagePage" type="button">Add image page</button>
+        <div class="field-grid">
+          <label class="checkbox-row">
+            <input id="adminServerEnabled" type="checkbox" />
+            Start local admin server on app launch
+          </label>
+
+          <label>
+            Admin server port
+            <input id="adminServerPort" type="number" min="1024" max="65535" step="1" />
+          </label>
         </div>
-        <div id="dropImagesZone" class="drop-zone" tabindex="0">
-          Drop images here to create pages, or click to select multiple image files.
+
+        <div class="admin-panel-card">
+          <strong>Server status</strong>
+          <span id="adminServerState" class="status-pill" data-running="false">Stopped</span>
+          <div id="adminServerUrl" class="admin-server-url">
+            Start the local admin server to open the browser panel.
+          </div>
+          <div class="row-actions">
+            <button id="openAdminPanel" type="button">Open admin panel</button>
+          </div>
         </div>
-        <div id="pagesList" class="pages-list"></div>
       </section>
 
       <section>

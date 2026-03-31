@@ -4,6 +4,7 @@ const fsp = require('node:fs/promises');
 const crypto = require('node:crypto');
 const { app } = require('electron');
 const { defaultConfig } = require('../shared/defaultConfig');
+const { normalizeContent } = require('../shared/contentModel');
 
 let cachedConfig = null;
 
@@ -24,12 +25,16 @@ function mergeWithDefaults(config) {
       }
     },
     content: {
-      ...defaultConfig.content,
-      ...(config?.content || {})
+      ...normalizeContent(defaultConfig.content),
+      ...normalizeContent(config?.content || {})
     },
     autoupdate: {
       ...defaultConfig.autoupdate,
       ...(config?.autoupdate || {})
+    },
+    adminServer: {
+      ...defaultConfig.adminServer,
+      ...(config?.adminServer || {})
     }
   };
 }
@@ -100,12 +105,16 @@ function setConfig(partialConfig) {
       }
     },
     content: {
-      ...current.content,
-      ...(partialConfig.content || {})
+      ...normalizeContent(current.content),
+      ...normalizeContent(partialConfig.content || {})
     },
     autoupdate: {
       ...current.autoupdate,
       ...(partialConfig.autoupdate || {})
+    },
+    adminServer: {
+      ...current.adminServer,
+      ...(partialConfig.adminServer || {})
     }
   });
 

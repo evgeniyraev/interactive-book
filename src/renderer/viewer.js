@@ -39,6 +39,7 @@ const elements = {
   sheetShadow: document.getElementById('sheet-shadow'),
   sheetHighlight: document.getElementById('sheet-highlight'),
   backgroundLayer: document.getElementById('background-layer'),
+  paginationLab: document.getElementById('pagination-lab'),
   mapImage: document.getElementById('displacement-map-image'),
   edgePrevZone: document.getElementById('edge-prev-zone'),
   edgeNextZone: document.getElementById('edge-next-zone'),
@@ -81,18 +82,21 @@ function hexToRgb(hex) {
 }
 
 function normalizeBookPage(rawPage, fallbackText = '') {
-  const type = rawPage?.type === 'image' ? 'image' : 'text';
+  const type = rawPage?.type === 'image' ? 'image' : 'document';
   const text = rawPage?.text || rawPage?.title || fallbackText;
+  const html = rawPage?.html || (text ? `<p>${escapeHtml(text)}</p>` : '<p></p>');
 
   return {
     type,
+    title: String(rawPage?.title || ''),
     text: String(text || ''),
+    html: String(html || '<p></p>'),
     imagePath: String(rawPage?.imagePath || '')
   };
 }
 
 function hasPageData(rawPage) {
-  return Boolean(rawPage && (rawPage.imagePath || rawPage.text || rawPage.title));
+  return Boolean(rawPage && (rawPage.imagePath || rawPage.html || rawPage.text || rawPage.title));
 }
 
 function pageAt(index) {
@@ -105,6 +109,10 @@ function pageAt(index) {
 
 function getPageWidth() {
   return Number(state.config?.design?.page?.width) || 900;
+}
+
+function getPageHeight() {
+  return Number(state.config?.design?.page?.height) || 1200;
 }
 
 function getBaseOffset() {
@@ -146,6 +154,46 @@ function getPageBackgroundStyle() {
   const alpha = clamp(Number.isFinite(alphaValue) ? alphaValue : 1, 0, 1);
   const rgb = hexToRgb(color);
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+}
+
+async function prepareDocumentPage(page, fallbackText = '') {
+  const normalized = normalizeBookPage(page, fallbackText);
+  if (normalized.type === 'image') {
+    return normalized;
+  }
+
+  return {
+    ...normalized,
+    html: await window.richContentRuntime.prepareHtml(normalized.html, resolveAssetUrl)
+  };
+}
+
+async function buildRenderablePages(rawPages) {
+  const nextPages = [];
+  const sourcePages = Array.isArray(rawPages) ? rawPages : [];
+
+  for (const rawPage of sourcePages) {
+    const page = await prepareDocumentPage(rawPage);
+    if (page.type === 'image') {
+      nextPages.push(page);
+      continue;
+    }
+
+    const fragments = window.richContentRuntime.paginatePreparedHtml(
+      page.html,
+      elements.paginationLab
+    );
+
+    fragments.forEach((fragment) => {
+      nextPages.push({
+        ...page,
+        type: 'document',
+        html: fragment
+      });
+    });
+  }
+
+  return nextPages;
 }
 
 function getIdleRandomFlipEnabled() {
@@ -437,7 +485,7 @@ function pageForSlot(slot) {
 
 async function buildSlotMarkup(slot) {
   if (!slot) {
-    return '<div class="page-content text"></div>';
+    return '<div class="page-content document"><div class="rich-content-root"><p></p></div></div>';
   }
 
   const page = normalizeBookPage(pageForSlot(slot));
@@ -447,9 +495,7 @@ async function buildSlotMarkup(slot) {
     return `<div class="page-content image"><img alt="Book page" src="${src}" draggable="false" /></div>`;
   }
 
-  const isCover = isCoverSlot(slot);
-  const className = isCover ? 'page-content text cover' : 'page-content text';
-  return `<div class="${className}">${escapeHtml(page.text || '')}</div>`;
+  return `<div class="page-content document"><div class="rich-content-root">${page.html || '<p></p>'}</div></div>`;
 }
 
 async function renderSlot(element, slot) {
@@ -588,7 +634,7 @@ async function applyDesign() {
   elements.backgroundLayer.style.backgroundImage = backgroundUrl ? `url("${backgroundUrl}")` : 'none';
 
   const pageWidth = getPageWidth();
-  const pageHeight = Number(design.page.height) || 1200;
+  const pageHeight = getPageHeight();
 
   elements.shell.style.width = `${pageWidth * 2}px`;
   elements.shell.style.height = `${pageHeight}px`;
@@ -616,6 +662,8 @@ async function applyDesign() {
   document.documentElement.style.setProperty('--inner-page-padding', `${getInnerPagePaddingX()}px`);
   document.documentElement.style.setProperty('--inner-page-padding-x', `${getInnerPagePaddingX()}px`);
   document.documentElement.style.setProperty('--inner-page-padding-y', `${getInnerPagePaddingY()}px`);
+  document.documentElement.style.setProperty('--page-width', `${pageWidth}px`);
+  document.documentElement.style.setProperty('--page-height', `${pageHeight}px`);
 }
 
 function computeFlipFromStep(step, current, target) {
@@ -971,17 +1019,17 @@ function setupTouchOpenSettings() {
   elements.touchZone.addEventListener('pointercancel', cancelHold);
 }
 
-function resolveSpecialPages(config) {
+async function resolveSpecialPages(config) {
   const content = config.content || {};
   const legacyCovers = content.covers || {};
   const frontSource = hasPageData(content.frontCover) ? content.frontCover : legacyCovers.front;
   const backSource = hasPageData(content.backCover) ? content.backCover : legacyCovers.back;
 
   return {
-    frontCover: normalizeBookPage(frontSource, 'Book Title'),
-    innerFront: normalizeBookPage(content.innerFront, ''),
-    innerBack: normalizeBookPage(content.innerBack, ''),
-    backCover: normalizeBookPage(backSource, '')
+    frontCover: await prepareDocumentPage(frontSource, 'Book Title'),
+    innerFront: await prepareDocumentPage(content.innerFront, ''),
+    innerBack: await prepareDocumentPage(content.innerBack, ''),
+    backCover: await prepareDocumentPage(backSource, '')
   };
 }
 
@@ -990,8 +1038,9 @@ async function reloadFromConfig() {
   state.resolvedAssetCache.clear();
 
   state.config = await window.bookApi.getConfig();
-  state.pages = (state.config.content?.pages || []).map((page) => normalizeBookPage(page));
-  state.special = resolveSpecialPages(state.config);
+  await applyDesign();
+  state.pages = await buildRenderablePages(state.config.content?.pages || []);
+  state.special = await resolveSpecialPages(state.config);
   state.spreads = buildSpreads();
 
   const maxSpread = state.spreads.length - 1;
@@ -999,7 +1048,6 @@ async function reloadFromConfig() {
   state.flip = null;
   state.isAnimating = false;
 
-  await applyDesign();
   await renderStaticSpread();
   noteUserActivity(true);
 }

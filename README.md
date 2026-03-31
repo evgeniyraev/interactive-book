@@ -11,8 +11,14 @@ Desktop fullscreen interactive book app with two runtime modes:
 - Two-page spread layout with drag-to-turn page flip (edge grab + bend/fold effect).
 - Settings window with sections:
   - `design`: background, displacement map, page offset, page styling, page size, hold duration.
-  - `content`: add/reorder/remove text/image pages.
+  - `admin panel`: local server toggle, port, open-browser shortcut.
   - `autoupdate`: update policy (`everything`, `minor`, `patch`), removable-drive sync toggle, export/import package.
+- Local admin web panel:
+  - rich WYSIWYG page editing powered by Quill
+  - inline images with wrap-left, wrap-right, centered, or no-wrap layout
+  - intentional page breaks inside rich content
+  - user bootstrap, login, and admin/editor user management
+- Runtime pagination of rich content into book pages so long text can continue across multiple pages in the app.
 - Hidden settings trigger in the viewer: hold top-left corner for `10` seconds (configurable).
 - Auto-update integration via GitHub Releases using `electron-updater`.
 - Removable drive sync support:
@@ -25,8 +31,11 @@ Desktop fullscreen interactive book app with two runtime modes:
 - `src/main/preload.js`: secure renderer API.
 - `src/main/configManager.js`: persisted config + hash.
 - `src/main/contentManager.js`: asset copy, export/import.
+- `src/main/adminServer.js`: local Express server for the admin panel.
+- `src/main/userManager.js`: local admin/editor user storage and password hashing.
 - `src/main/updateManager.js`: update policy filtering + updater hooks.
 - `src/main/externalSyncManager.js`: removable-drive polling and import.
+- `src/admin/*`: browser admin panel.
 - `src/renderer/index.html`: fullscreen viewer.
 - `src/renderer/settings.html`: settings UI.
 
@@ -37,11 +46,25 @@ npm install
 npm run dev
 ```
 
+Run with the admin server forced on:
+
+```bash
+npm run dev:admin
+```
+
 For production-style run:
 
 ```bash
 npm start
 ```
+
+Or:
+
+```bash
+npm run start:admin
+```
+
+You can also enable the admin server from the desktop settings window and then use the "Open admin panel" button.
 
 ## GitHub build and release
 

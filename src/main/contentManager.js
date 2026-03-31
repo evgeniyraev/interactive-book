@@ -99,13 +99,20 @@ async function copyManyBuffersToAssets(files) {
     const ext = normalizeImageExtension(file?.name || '');
     const fileName = sanitizeAssetFileName(file?.name || '', ext);
     const bytes = file?.data;
-    if (!(bytes instanceof ArrayBuffer)) {
+    const buffer =
+      bytes instanceof ArrayBuffer
+        ? Buffer.from(new Uint8Array(bytes))
+        : Buffer.isBuffer(bytes)
+          ? bytes
+          : null;
+
+    if (!buffer) {
       continue;
     }
 
     const assetsRelativePath = await createUniqueAssetRelativePath(fileName);
     const destination = resolveDataPath(assetsRelativePath);
-    await fs.writeFile(destination, Buffer.from(new Uint8Array(bytes)));
+    await fs.writeFile(destination, buffer);
     imported.push(assetsRelativePath);
   }
 

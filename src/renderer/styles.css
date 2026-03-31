@@ -29,6 +29,17 @@ body {
   z-index: 0;
 }
 
+#pagination-lab {
+  position: fixed;
+  left: -99999px;
+  top: 0;
+  width: calc(var(--page-width, 900px) - 4.4rem);
+  height: calc(var(--page-height, 1200px) - 4.4rem);
+  pointer-events: none;
+  opacity: 0;
+  overflow: hidden;
+}
+
 #fx-svg {
   width: 0;
   height: 0;
@@ -174,6 +185,46 @@ body {
   padding: 0;
 }
 
+.page-content.document {
+  display: block;
+  padding: 2.2rem;
+}
+
+.page-content.document .rich-content-root {
+  width: 100%;
+  min-height: 100%;
+  font-size: clamp(0.95rem, 1.35vw, 1.2rem);
+}
+
+.page-content.document .ql-align-center {
+  text-align: center;
+}
+
+.page-content.document .ql-align-right {
+  text-align: right;
+}
+
+.page-content.document .ql-align-justify {
+  text-align: justify;
+}
+
+.page-content.document .ql-size-small {
+  font-size: 0.85em;
+}
+
+.page-content.document .ql-size-large {
+  font-size: 1.25em;
+}
+
+.page-content.document .ql-size-huge {
+  font-size: 1.55em;
+}
+
+.page-content.document hr.rich-page-break {
+  opacity: 0;
+  margin: 0;
+}
+
 .page-content.image img {
   width: 100%;
   height: 100%;
@@ -213,6 +264,43 @@ body {
   background: #fff;
   color: #111827;
   box-shadow: 0 10px 36px rgb(0 0 0 / 36%);
+}
+
+.pagination-page-shell {
+  width: calc(var(--page-width, 900px) - 4.4rem);
+  height: calc(var(--page-height, 1200px) - 4.4rem);
+  padding: 0;
+  overflow: hidden;
+}
+
+.pagination-page-shell .rich-content-root {
+  width: 100%;
+  height: 100%;
+  font-size: clamp(0.95rem, 1.35vw, 1.2rem);
+}
+
+.pagination-page-shell .ql-align-center {
+  text-align: center;
+}
+
+.pagination-page-shell .ql-align-right {
+  text-align: right;
+}
+
+.pagination-page-shell .ql-align-justify {
+  text-align: justify;
+}
+
+.pagination-page-shell .ql-size-small {
+  font-size: 0.85em;
+}
+
+.pagination-page-shell .ql-size-large {
+  font-size: 1.25em;
+}
+
+.pagination-page-shell .ql-size-huge {
+  font-size: 1.55em;
 }
 
 #flip-front {

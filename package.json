@@ -11,7 +11,9 @@
   },
   "scripts": {
     "dev": "cross-env NODE_ENV=development electron .",
+    "dev:admin": "cross-env NODE_ENV=development electron . --admin-server",
     "start": "cross-env NODE_ENV=production electron .",
+    "start:admin": "cross-env NODE_ENV=production electron . --admin-server",
     "pack": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
     "dist": "cross-env NODE_ENV=production CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
     "postinstall": "electron-builder install-app-deps"
@@ -20,7 +22,9 @@
     "drivelist": "^12.0.2",
     "electron-log": "^5.2.4",
     "electron-updater": "^6.6.2",
+    "express": "^5.2.1",
     "fs-extra": "^11.3.2",
+    "quill": "^2.0.3",
     "semver": "^7.7.3"
   },
   "devDependencies": {
