@@ -29,6 +29,7 @@ const state = {
   lastActivityAt: 0,
   touchSwipe: null,
   pdfModulePromise: null,
+  shelfPdfPreviewCache: new Map(),
   pdf: {
     sourceKey: '',
     document: null,
@@ -375,6 +376,59 @@ async function renderPdfPageImage(pageNumber) {
   state.pdf.pageImageCache.set(pageNumber, dataUrl);
   pdfPage.cleanup?.();
   return dataUrl;
+}
+
+async function renderPdfShelfPreview(pdfSource) {
+  const assetPath = pdfSource?.assetPath || '';
+  if (!assetPath) {
+    return '';
+  }
+
+  if (state.shelfPdfPreviewCache.has(assetPath)) {
+    return state.shelfPdfPreviewCache.get(assetPath);
+  }
+
+  let pdfDocument = null;
+  try {
+    const pdfjsLib = await loadPdfModule();
+    const bytes = await window.bookApi.readAsset(assetPath);
+    const loadingTask = pdfjsLib.getDocument({
+      data: toUint8Array(bytes),
+      useSystemFonts: true
+    });
+    pdfDocument = await loadingTask.promise;
+    const pdfPage = await pdfDocument.getPage(1);
+    const baseViewport = pdfPage.getViewport({ scale: 1 });
+    const targetWidth = 520;
+    const pixelRatio = clamp(window.devicePixelRatio || 1, 1, 2);
+    const renderScale = clamp((targetWidth / baseViewport.width) * pixelRatio, 0.5, 2);
+    const viewport = pdfPage.getViewport({ scale: renderScale });
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
+    await pdfPage.render({
+      canvasContext: context,
+      viewport
+    }).promise;
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    state.shelfPdfPreviewCache.set(assetPath, dataUrl);
+    pdfPage.cleanup?.();
+    return dataUrl;
+  } catch (error) {
+    console.error('Could not render PDF shelf preview:', error);
+    state.shelfPdfPreviewCache.set(assetPath, '');
+    return '';
+  } finally {
+    if (pdfDocument?.destroy) {
+      await pdfDocument.destroy();
+    }
+  }
 }
 
 function getIdleRandomFlipEnabled() {
@@ -1431,19 +1485,23 @@ async function buildShelfBookMarkup(book, index) {
   let coverMarkup = `<div class="rich-content-root">${cover.html || `<p>${escapeHtml(title)}</p>`}</div>`;
 
   if (hasPdfSource(content)) {
-    coverMarkup = `<div class="shelf-pdf-cover"><span>PDF</span><strong>${escapeHtml(title)}</strong></div>`;
+    const previewSrc = await renderPdfShelfPreview(content.pdfSource);
+    coverMarkup = previewSrc
+      ? `<img class="shelf-pdf-preview" alt="${escapeHtml(title)} first page" src="${previewSrc}" draggable="false" />`
+      : `<div class="shelf-pdf-cover"><span>PDF</span><strong>${escapeHtml(title)}</strong></div>`;
   } else if (cover.type === 'image' && cover.imagePath) {
     const src = await resolveAssetUrl(cover.imagePath);
     coverMarkup = `<img alt="${escapeHtml(title)} cover" src="${src}" draggable="false" />`;
   }
 
   const pageCount = Array.isArray(content.pages) ? content.pages.length : 0;
-  const meta = hasPdfSource(content) ? 'PDF book' : (pageCount === 1 ? '1 page' : `${pageCount} pages`);
+  const meta = hasPdfSource(content) ? '' : (pageCount === 1 ? '1 page' : `${pageCount} pages`);
+  const metaMarkup = meta ? `<div class="shelf-book-meta">${escapeHtml(meta)}</div>` : '';
 
   return `
     <div class="shelf-book-cover">${coverMarkup}</div>
     <div class="shelf-book-title">${escapeHtml(title)}</div>
-    <div class="shelf-book-meta">${escapeHtml(meta)}</div>
+    ${metaMarkup}
   `;
 }
 

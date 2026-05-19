@@ -197,8 +197,8 @@ function persistBookMetaState() {
     return;
   }
 
-  book.title = els.bookTitleInput.value.trim() || 'Untitled book';
-  book.description = els.bookDescriptionInput.value.trim();
+  book.title = els.bookTitleInput.value;
+  book.description = els.bookDescriptionInput.value;
 }
 
 function selectionIndex() {
@@ -423,7 +423,7 @@ function moveBook(fromIndex, toIndex) {
   renderEditor();
 }
 
-function renderBookList() {
+function renderBookList(options = {}) {
   els.bookList.innerHTML = '';
 
   state.books.forEach((book, index) => {
@@ -483,7 +483,9 @@ function renderBookList() {
     els.bookList.append(button);
   });
 
-  renderBookDetails();
+  if (options.updateDetails !== false) {
+    renderBookDetails();
+  }
 }
 
 function movePage(fromIndex, toIndex) {
@@ -1408,7 +1410,7 @@ function bindEvents() {
 
   els.bookTitleInput.addEventListener('input', () => {
     persistBookMetaState();
-    renderBookList();
+    renderBookList({ updateDetails: false });
   });
 
   els.bookDescriptionInput.addEventListener('input', () => {

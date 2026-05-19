@@ -132,6 +132,11 @@ body {
   user-select: none;
 }
 
+.shelf-book-cover img.shelf-pdf-preview {
+  object-fit: contain;
+  background: #f8fafc;
+}
+
 .shelf-book-cover .rich-content-root {
   width: 100%;
   max-height: 100%;
