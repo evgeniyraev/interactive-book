@@ -3,7 +3,7 @@ const crypto = require('node:crypto');
 const express = require('express');
 const { app } = require('electron');
 const { getConfig, setConfig, getDataRoot } = require('./configManager');
-const { copyManyBuffersToAssets } = require('./contentManager');
+const { copyManyBuffersToAssets, copyPdfBufferToAssets } = require('./contentManager');
 const {
   canManageUsers,
   SESSION_COOKIE_NAME,
@@ -17,7 +17,7 @@ const {
   updateUser,
   verifyCredentials
 } = require('./userManager');
-const { normalizeContent } = require('../shared/contentModel');
+const { normalizeBooks, normalizeContent } = require('../shared/contentModel');
 
 function parseCookies(request) {
   const header = request.headers.cookie || '';
@@ -50,6 +50,53 @@ function publicUser(user) {
   };
 }
 
+function pickActiveBookId(preferredId, books) {
+  const normalizedId = String(preferredId || '');
+  if (normalizedId && books.some((book) => book.id === normalizedId)) {
+    return normalizedId;
+  }
+
+  return books[0]?.id || '';
+}
+
+function libraryPayload(config) {
+  const books = normalizeBooks(config.books, config.content);
+  const activeBookId = pickActiveBookId(config.activeBookId, books);
+  const activeBook = books.find((book) => book.id === activeBookId) || books[0];
+
+  return {
+    books,
+    activeBookId,
+    content: activeBook?.content || normalizeContent(config.content),
+    design: {
+      page: config.design.page,
+      innerPagePadding: config.design.innerPagePadding,
+      innerPagePaddingY: config.design.innerPagePaddingY,
+      appBackgroundColor: config.design.appBackgroundColor
+    }
+  };
+}
+
+function updateBookContent(config, bookId, createNextContent) {
+  const books = normalizeBooks(config.books, config.content);
+  const activeBookId = pickActiveBookId(bookId || config.activeBookId, books);
+  const nextBooks = books.map((book) => {
+    if (book.id !== activeBookId) {
+      return book;
+    }
+
+    return {
+      ...book,
+      content: normalizeContent(createNextContent(book.content))
+    };
+  });
+
+  return {
+    books: nextBooks,
+    activeBookId
+  };
+}
+
 class AdminServer {
   constructor(options = {}) {
     this.server = null;
@@ -78,7 +125,7 @@ class AdminServer {
 
     const application = express();
     application.disable('x-powered-by');
-    application.use(express.json({ limit: '50mb' }));
+    application.use(express.json({ limit: '250mb' }));
 
     application.use((request, response, next) => {
       const cookies = parseCookies(request);
@@ -179,26 +226,70 @@ class AdminServer {
     });
 
     application.get('/api/content', requireAuthenticated, async (_request, response) => {
-      const config = getConfig();
-      response.json({
-        content: normalizeContent(config.content),
-        design: {
-          page: config.design.page,
-          innerPagePadding: config.design.innerPagePadding,
-          innerPagePaddingY: config.design.innerPagePaddingY,
-          appBackgroundColor: config.design.appBackgroundColor
-        }
-      });
+      response.json(libraryPayload(getConfig()));
     });
 
     application.put('/api/content', requireAuthenticated, async (request, response) => {
       try {
-        const content = normalizeContent(request.body?.content || {});
-        const updated = setConfig({ content });
+        const body = request.body || {};
+        const update = Array.isArray(body.books)
+          ? {
+              books: normalizeBooks(body.books, getConfig().content),
+              activeBookId: body.activeBookId
+            }
+          : {
+              content: normalizeContent(body.content || {})
+            };
+        const updated = setConfig(update);
         this.onContentSaved(updated);
-        response.json({
-          content: normalizeContent(updated.content)
+        response.json(libraryPayload(updated));
+      } catch (error) {
+        response.status(400).json({ error: error.message });
+      }
+    });
+
+    application.post('/api/content/pdf', requireAuthenticated, async (request, response) => {
+      try {
+        const file = request.body?.file || {};
+        const assetPath = await copyPdfBufferToAssets({
+          name: file?.name || 'book.pdf',
+          data: Buffer.from(String(file?.dataBase64 || ''), 'base64')
         });
+
+        const library = updateBookContent(
+          getConfig(),
+          request.body?.bookId,
+          (currentContent) => ({
+            ...currentContent,
+            pdfSource: {
+              assetPath,
+              fileName: file?.name || path.basename(assetPath),
+              importedAt: new Date().toISOString(),
+              pageCount: 0
+            }
+          })
+        );
+        const updated = setConfig(library);
+        this.onContentSaved(updated);
+        response.json(libraryPayload(updated));
+      } catch (error) {
+        response.status(400).json({ error: error.message });
+      }
+    });
+
+    application.delete('/api/content/pdf', requireAuthenticated, async (request, response) => {
+      try {
+        const library = updateBookContent(
+          getConfig(),
+          request.query?.bookId,
+          (currentContent) => ({
+            ...currentContent,
+            pdfSource: null
+          })
+        );
+        const updated = setConfig(library);
+        this.onContentSaved(updated);
+        response.json(libraryPayload(updated));
       } catch (error) {
         response.status(400).json({ error: error.message });
       }

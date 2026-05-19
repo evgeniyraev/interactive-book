@@ -18,26 +18,41 @@
       </filter>
     </svg>
 
-    <main id="book-stage" role="main">
-      <div id="book-shell">
-        <div id="side-left-stack" class="side-stack"></div>
-        <div id="side-right-stack" class="side-stack"></div>
-        <div id="book-gutter"></div>
+    <section id="shelf-view" class="shelf-view" aria-label="Book shelf">
+      <div class="shelf-inner">
+        <div class="shelf-header">
+          <h1>Library</h1>
+        </div>
+        <div id="shelf-grid" class="shelf-grid"></div>
+      </div>
+    </section>
 
-        <article id="base-left" class="page page-left base-page hidden"></article>
-        <article id="base-right" class="page page-right base-page hidden"></article>
+    <nav id="reader-menu" class="reader-menu hidden" aria-label="Reader menu">
+      <button id="shelf-button" type="button">Shelf</button>
+    </nav>
 
-        <article id="static-left" class="page page-left"></article>
-        <article id="static-right" class="page page-right"></article>
+    <main id="book-stage" class="hidden" role="main">
+      <div id="reader-frame">
+        <div id="book-shell">
+          <div id="side-left-stack" class="side-stack"></div>
+          <div id="side-right-stack" class="side-stack"></div>
+          <div id="book-gutter"></div>
 
-        <article id="under-left" class="page page-left hidden"></article>
-        <article id="under-right" class="page page-right hidden"></article>
+          <article id="base-left" class="page page-left base-page hidden"></article>
+          <article id="base-right" class="page page-right base-page hidden"></article>
 
-        <div id="flip-sheet" class="hidden" aria-hidden="true">
-          <article id="flip-front" class="sheet-face"></article>
-          <article id="flip-back" class="sheet-face sheet-back"></article>
-          <div id="sheet-shadow"></div>
-          <div id="sheet-highlight"></div>
+          <article id="static-left" class="page page-left"></article>
+          <article id="static-right" class="page page-right"></article>
+
+          <article id="under-left" class="page page-left hidden"></article>
+          <article id="under-right" class="page page-right hidden"></article>
+
+          <div id="flip-sheet" class="hidden" aria-hidden="true">
+            <article id="flip-front" class="sheet-face"></article>
+            <article id="flip-back" class="sheet-face sheet-back"></article>
+            <div id="sheet-shadow"></div>
+            <div id="sheet-highlight"></div>
+          </div>
         </div>
       </div>
     </main>

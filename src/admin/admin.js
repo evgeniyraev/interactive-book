@@ -9,12 +9,15 @@ const CONTENT_PADDING = '2.2rem';
 
 const state = {
   currentUser: null,
+  books: [],
+  activeBookId: '',
   content: null,
   design: null,
   activePane: 'pages',
   selection: { kind: 'fixed', key: 'frontCover' },
   imageUploadMode: 'page',
   quill: null,
+  draggedBookIndex: null,
   draggedPageIndex: null,
   resizeSession: null,
   overflowCheckTimer: null,
@@ -29,6 +32,13 @@ const els = {
   sessionBadge: document.getElementById('sessionBadge'),
   logoutButton: document.getElementById('logoutButton'),
   serverUrl: document.getElementById('serverUrl'),
+  bookList: document.getElementById('bookList'),
+  bookTitleInput: document.getElementById('bookTitleInput'),
+  bookDescriptionInput: document.getElementById('bookDescriptionInput'),
+  addBookButton: document.getElementById('addBookButton'),
+  moveBookUpButton: document.getElementById('moveBookUpButton'),
+  moveBookDownButton: document.getElementById('moveBookDownButton'),
+  removeBookButton: document.getElementById('removeBookButton'),
   itemList: document.getElementById('itemList'),
   pagesTab: document.getElementById('pagesTab'),
   usersTab: document.getElementById('usersTab'),
@@ -54,6 +64,11 @@ const els = {
   status: document.getElementById('status'),
   usersList: document.getElementById('usersList'),
   assetUploadInput: document.getElementById('assetUploadInput'),
+  pdfUploadInput: document.getElementById('pdfUploadInput'),
+  pdfDropZone: document.getElementById('pdfDropZone'),
+  pdfFileName: document.getElementById('pdfFileName'),
+  pdfImportedAt: document.getElementById('pdfImportedAt'),
+  removePdfButton: document.getElementById('removePdfButton'),
   paginationLab: document.getElementById('paginationLab'),
   alignImageLeftButton: document.getElementById('alignImageLeftButton'),
   alignImageCenterButton: document.getElementById('alignImageCenterButton'),
@@ -121,6 +136,71 @@ function createImagePage() {
   };
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function createPdfSource(options = {}) {
+  return {
+    assetPath: String(options.assetPath || ''),
+    fileName: String(options.fileName || ''),
+    importedAt: String(options.importedAt || ''),
+    pageCount: Number(options.pageCount || 0)
+  };
+}
+
+function createDefaultContent(title = 'Untitled book') {
+  return {
+    frontCover: createDocumentPage({
+      title: 'Front cover',
+      html: `<h1>${escapeHtml(title)}</h1>`
+    }),
+    innerFront: createDocumentPage({ title: 'Front inner', html: '<p></p>' }),
+    innerBack: createDocumentPage({ title: 'Back inner', html: '<p></p>' }),
+    backCover: createDocumentPage({ title: 'Back cover', html: '<p></p>' }),
+    pages: [createDocumentPage({ title: 'Page 1' })],
+    pdfSource: createPdfSource()
+  };
+}
+
+function createBook(options = {}) {
+  const title = String(options.title || 'Untitled book');
+  return {
+    id: crypto.randomUUID(),
+    title,
+    description: String(options.description || ''),
+    content: options.content || createDefaultContent(title)
+  };
+}
+
+function activeBookIndex() {
+  return state.books.findIndex((book) => book.id === state.activeBookId);
+}
+
+function currentBook() {
+  const index = activeBookIndex();
+  return index >= 0 ? state.books[index] : null;
+}
+
+function syncActiveContentFromBook() {
+  state.content = currentBook()?.content || null;
+}
+
+function persistBookMetaState() {
+  const book = currentBook();
+  if (!book) {
+    return;
+  }
+
+  book.title = els.bookTitleInput.value.trim() || 'Untitled book';
+  book.description = els.bookDescriptionInput.value.trim();
+}
+
 function selectionIndex() {
   return state.selection.kind === 'page' ? state.selection.index : -1;
 }
@@ -179,6 +259,40 @@ function canManageTargetInUi(user) {
   }
 
   return user.role === 'editor';
+}
+
+function currentPdfSource() {
+  return state.content?.pdfSource || null;
+}
+
+function formatImportedAt(value) {
+  if (!value) {
+    return '';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function renderPdfPanel() {
+  const source = currentPdfSource();
+  const hasPdf = Boolean(source?.assetPath);
+
+  els.pdfFileName.textContent = hasPdf ? source.fileName || source.assetPath : 'No PDF uploaded';
+  els.pdfImportedAt.textContent = hasPdf
+    ? `Uploaded ${formatImportedAt(source.importedAt) || 'recently'}. Upload another PDF to replace it.`
+    : 'The viewer will keep showing the legacy rich-content book until a PDF is uploaded.';
+  els.removePdfButton.disabled = !hasPdf;
 }
 
 function ensureImageSrcForEditor(html = '') {
@@ -240,15 +354,136 @@ function renderPaneVisibility() {
   els.usersTab.classList.toggle('active', !isPages);
 }
 
-function createListButton(label, metaText) {
+function createListButton(label, metaText, className = 'item-button') {
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'item-button';
+  button.className = className;
   button.textContent = label;
   const metaLine = document.createElement('small');
   metaLine.textContent = metaText;
   button.append(metaLine);
   return button;
+}
+
+function pageCountLabel(content) {
+  const pageCount = Array.isArray(content?.pages) ? content.pages.length : 0;
+  return pageCount === 1 ? '1 page' : `${pageCount} pages`;
+}
+
+function renderBookDetails() {
+  const book = currentBook();
+  const index = activeBookIndex();
+
+  els.bookTitleInput.value = book?.title || '';
+  els.bookDescriptionInput.value = book?.description || '';
+  els.moveBookUpButton.disabled = index <= 0;
+  els.moveBookDownButton.disabled = index < 0 || index >= state.books.length - 1;
+  els.removeBookButton.disabled = state.books.length <= 1 || index < 0;
+}
+
+function clearBookDropTargets() {
+  els.bookList.querySelectorAll('.drop-target').forEach((node) => node.classList.remove('drop-target'));
+}
+
+function selectBook(bookId) {
+  if (bookId === state.activeBookId) {
+    return;
+  }
+
+  persistEditorState();
+  persistBookMetaState();
+  state.activeBookId = bookId;
+  syncActiveContentFromBook();
+  state.selection = { kind: 'fixed', key: 'frontCover' };
+  renderBookList();
+  renderPdfPanel();
+  renderItemList();
+  renderEditor();
+}
+
+function moveBook(fromIndex, toIndex) {
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) {
+    return;
+  }
+
+  if (fromIndex >= state.books.length || toIndex >= state.books.length) {
+    return;
+  }
+
+  persistEditorState();
+  persistBookMetaState();
+  const previousActiveBookId = state.activeBookId;
+  const [book] = state.books.splice(fromIndex, 1);
+  state.books.splice(toIndex, 0, book);
+  state.activeBookId = previousActiveBookId;
+  syncActiveContentFromBook();
+  renderBookList();
+  renderPdfPanel();
+  renderItemList();
+  renderEditor();
+}
+
+function renderBookList() {
+  els.bookList.innerHTML = '';
+
+  state.books.forEach((book, index) => {
+    const source = book.content?.pdfSource?.assetPath ? 'PDF' : 'Rich content';
+    const button = createListButton(
+      book.title || `Book ${index + 1}`,
+      `${source} · ${pageCountLabel(book.content)}`,
+      'book-button'
+    );
+    button.classList.toggle('active', book.id === state.activeBookId);
+    button.draggable = true;
+    button.dataset.bookId = book.id;
+    button.dataset.bookIndex = String(index);
+
+    button.addEventListener('click', () => {
+      selectBook(book.id);
+    });
+
+    button.addEventListener('dragstart', () => {
+      state.draggedBookIndex = index;
+      button.classList.add('dragging');
+    });
+
+    button.addEventListener('dragend', () => {
+      state.draggedBookIndex = null;
+      clearBookDropTargets();
+      button.classList.remove('dragging');
+    });
+
+    button.addEventListener('dragover', (event) => {
+      if (state.draggedBookIndex == null) {
+        return;
+      }
+
+      event.preventDefault();
+      clearBookDropTargets();
+      button.classList.add('drop-target');
+    });
+
+    button.addEventListener('dragleave', () => {
+      button.classList.remove('drop-target');
+    });
+
+    button.addEventListener('drop', (event) => {
+      event.preventDefault();
+      const fromIndex = state.draggedBookIndex;
+      state.draggedBookIndex = null;
+      clearBookDropTargets();
+      button.classList.remove('drop-target');
+      if (fromIndex == null) {
+        return;
+      }
+
+      moveBook(fromIndex, index);
+    });
+
+    els.bookList.append(button);
+  });
+
+  renderBookDetails();
 }
 
 function movePage(fromIndex, toIndex) {
@@ -284,6 +519,9 @@ function clearDropTargets() {
 
 function renderItemList() {
   els.itemList.innerHTML = '';
+  if (!state.content) {
+    return;
+  }
 
   for (const meta of FIXED_PAGE_META) {
     const button = createListButton(meta.label, state.content[meta.key].type);
@@ -548,21 +786,39 @@ function switchItemType(nextType) {
   renderItemList();
 }
 
+function applyLibraryPayload(payload) {
+  state.books = Array.isArray(payload.books) && payload.books.length > 0
+    ? payload.books
+    : [createBook({ title: 'Book 1', content: payload.content })];
+  state.activeBookId = state.books.some((book) => book.id === payload.activeBookId)
+    ? payload.activeBookId
+    : state.books[0]?.id || '';
+  state.design = payload.design;
+  syncActiveContentFromBook();
+}
+
 async function loadContent() {
   const payload = await request('/api/content');
-  state.content = payload.content;
-  state.design = payload.design;
+  applyLibraryPayload(payload);
+  renderPdfPanel();
+  renderBookList();
   renderItemList();
   renderEditor();
 }
 
 async function saveContent() {
   persistEditorState();
+  persistBookMetaState();
   const payload = await request('/api/content', {
     method: 'PUT',
-    body: JSON.stringify({ content: state.content })
+    body: JSON.stringify({
+      books: state.books,
+      activeBookId: state.activeBookId
+    })
   });
-  state.content = payload.content;
+  applyLibraryPayload(payload);
+  renderPdfPanel();
+  renderBookList();
   renderItemList();
   renderEditor();
   setStatus('Content saved.');
@@ -592,6 +848,94 @@ function fileToBase64(file) {
     };
     reader.readAsDataURL(file);
   });
+}
+
+function isPdfFile(file) {
+  return Boolean(file && (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '')));
+}
+
+async function importPdfFile(file) {
+  if (!isPdfFile(file)) {
+    setStatus('Upload a PDF file.');
+    return;
+  }
+
+  setStatus(`Uploading ${file.name}...`);
+  persistEditorState();
+  persistBookMetaState();
+  const payload = await request('/api/content/pdf', {
+    method: 'POST',
+    body: JSON.stringify({
+      bookId: state.activeBookId,
+      file: {
+        name: file.name,
+        dataBase64: await fileToBase64(file)
+      }
+    })
+  });
+
+  applyLibraryPayload(payload);
+  renderPdfPanel();
+  renderBookList();
+  renderItemList();
+  renderEditor();
+  setStatus(`${file.name} is now the active book PDF.`);
+}
+
+async function clearPdfSource() {
+  persistEditorState();
+  persistBookMetaState();
+  const payload = await request(`/api/content/pdf?bookId=${encodeURIComponent(state.activeBookId)}`, {
+    method: 'DELETE'
+  });
+
+  applyLibraryPayload(payload);
+  renderPdfPanel();
+  renderBookList();
+  renderItemList();
+  renderEditor();
+  setStatus('PDF source cleared.');
+}
+
+function addBook() {
+  persistEditorState();
+  persistBookMetaState();
+  const title = `Book ${state.books.length + 1}`;
+  const book = createBook({ title });
+  state.books.push(book);
+  state.activeBookId = book.id;
+  syncActiveContentFromBook();
+  state.selection = { kind: 'fixed', key: 'frontCover' };
+  renderBookList();
+  renderPdfPanel();
+  renderItemList();
+  renderEditor();
+  setStatus(`${title} added.`);
+}
+
+function removeActiveBook() {
+  const index = activeBookIndex();
+  if (state.books.length <= 1 || index < 0) {
+    return;
+  }
+
+  const book = currentBook();
+  if (!window.confirm(`Remove ${book.title || 'this book'} from the shelf?`)) {
+    return;
+  }
+
+  persistEditorState();
+  persistBookMetaState();
+  state.books.splice(index, 1);
+  const nextBook = state.books[Math.min(index, state.books.length - 1)];
+  state.activeBookId = nextBook?.id || '';
+  syncActiveContentFromBook();
+  state.selection = { kind: 'fixed', key: 'frontCover' };
+  renderBookList();
+  renderPdfPanel();
+  renderItemList();
+  renderEditor();
+  setStatus('Book removed.');
 }
 
 function chooseAsset(mode) {
@@ -675,6 +1019,7 @@ function splitOverflowIntoPages() {
   );
 
   state.content.pages.splice(currentIndex + 1, 0, ...additions);
+  renderBookList();
   renderItemList();
   renderEditor();
   setStatus(`Created ${additions.length} continuation page(s).`);
@@ -710,8 +1055,8 @@ async function loadUsers() {
     displayNameInput.value = user.displayName;
     displayNameLabel.append(displayNameInput);
 
-    const roleLabel = document.createElement('label');
-    roleLabel.textContent = 'Role';
+    const roleFieldLabel = document.createElement('label');
+    roleFieldLabel.textContent = 'Role';
     const roleSelect = document.createElement('select');
     roleSelect.name = 'role';
     ['editor', 'admin'].forEach((role) => {
@@ -725,7 +1070,7 @@ async function loadUsers() {
       option.selected = user.role === role;
       roleSelect.append(option);
     });
-    roleLabel.append(roleSelect);
+    roleFieldLabel.append(roleSelect);
 
     const passwordLabel = document.createElement('label');
     passwordLabel.textContent = 'New password';
@@ -772,7 +1117,7 @@ async function loadUsers() {
       title,
       usernameLabel,
       displayNameLabel,
-      roleLabel,
+      roleFieldLabel,
       passwordLabel,
       activeLabel,
       actions
@@ -1043,6 +1388,33 @@ function bindEvents() {
     window.location.reload();
   });
 
+  els.addBookButton.addEventListener('click', addBook);
+
+  els.moveBookUpButton.addEventListener('click', () => {
+    const index = activeBookIndex();
+    if (index > 0) {
+      moveBook(index, index - 1);
+    }
+  });
+
+  els.moveBookDownButton.addEventListener('click', () => {
+    const index = activeBookIndex();
+    if (index >= 0 && index < state.books.length - 1) {
+      moveBook(index, index + 1);
+    }
+  });
+
+  els.removeBookButton.addEventListener('click', removeActiveBook);
+
+  els.bookTitleInput.addEventListener('input', () => {
+    persistBookMetaState();
+    renderBookList();
+  });
+
+  els.bookDescriptionInput.addEventListener('input', () => {
+    persistBookMetaState();
+  });
+
   els.itemTitleInput.addEventListener('input', () => {
     const page = currentItem();
     if (!page) {
@@ -1061,6 +1433,7 @@ function bindEvents() {
     persistEditorState();
     state.content.pages.push(createDocumentPage());
     state.selection = { kind: 'page', index: state.content.pages.length - 1 };
+    renderBookList();
     renderItemList();
     renderEditor();
   });
@@ -1069,11 +1442,61 @@ function bindEvents() {
     persistEditorState();
     state.content.pages.push(createImagePage());
     state.selection = { kind: 'page', index: state.content.pages.length - 1 };
+    renderBookList();
     renderItemList();
     renderEditor();
   });
 
   document.getElementById('saveContentButton').addEventListener('click', saveContent);
+
+  els.pdfDropZone.addEventListener('click', () => {
+    els.pdfUploadInput.click();
+  });
+
+  ['dragenter', 'dragover'].forEach((eventName) => {
+    els.pdfDropZone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      els.pdfDropZone.classList.add('drag-over');
+    });
+  });
+
+  ['dragleave', 'drop'].forEach((eventName) => {
+    els.pdfDropZone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      els.pdfDropZone.classList.remove('drag-over');
+    });
+  });
+
+  els.pdfDropZone.addEventListener('drop', async (event) => {
+    const [file] = event.dataTransfer?.files || [];
+    if (file) {
+      try {
+        await importPdfFile(file);
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+  });
+
+  els.pdfUploadInput.addEventListener('change', async () => {
+    const [file] = els.pdfUploadInput.files || [];
+    els.pdfUploadInput.value = '';
+    if (file) {
+      try {
+        await importPdfFile(file);
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+  });
+
+  els.removePdfButton.addEventListener('click', async () => {
+    try {
+      await clearPdfSource();
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
 
   els.moveUpButton.addEventListener('click', () => {
     const index = selectionIndex();
@@ -1099,6 +1522,7 @@ function bindEvents() {
     state.selection = state.content.pages.length
       ? { kind: 'page', index: Math.max(0, index - 1) }
       : { kind: 'fixed', key: 'frontCover' };
+    renderBookList();
     renderItemList();
     renderEditor();
   });

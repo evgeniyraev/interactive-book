@@ -12,6 +12,7 @@ const {
 } = require('./configManager');
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.avif']);
+const PDF_EXTENSION = '.pdf';
 
 function toPortablePath(value) {
   return value.split(path.sep).join('/');
@@ -26,7 +27,13 @@ function resolveDataPath(relativePath) {
     return '';
   }
 
-  return path.join(getDataRoot(), fromPortablePath(relativePath));
+  const root = path.resolve(getDataRoot());
+  const resolved = path.resolve(root, fromPortablePath(relativePath));
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+    throw new Error('Invalid data path.');
+  }
+
+  return resolved;
 }
 
 function sanitizeAssetFileName(fileName, fallbackExt = '') {
@@ -93,18 +100,24 @@ function normalizeImageExtension(fileName = '') {
   return '.png';
 }
 
+function normalizeBuffer(bytes) {
+  if (bytes instanceof ArrayBuffer) {
+    return Buffer.from(new Uint8Array(bytes));
+  }
+
+  if (Buffer.isBuffer(bytes)) {
+    return bytes;
+  }
+
+  return null;
+}
+
 async function copyManyBuffersToAssets(files) {
   const imported = [];
   for (const file of files) {
     const ext = normalizeImageExtension(file?.name || '');
     const fileName = sanitizeAssetFileName(file?.name || '', ext);
-    const bytes = file?.data;
-    const buffer =
-      bytes instanceof ArrayBuffer
-        ? Buffer.from(new Uint8Array(bytes))
-        : Buffer.isBuffer(bytes)
-          ? bytes
-          : null;
+    const buffer = normalizeBuffer(file?.data);
 
     if (!buffer) {
       continue;
@@ -117,6 +130,35 @@ async function copyManyBuffersToAssets(files) {
   }
 
   return imported;
+}
+
+async function copyPdfBufferToAssets(file) {
+  const buffer = normalizeBuffer(file?.data);
+  if (!buffer?.length) {
+    throw new Error('The uploaded PDF is empty.');
+  }
+
+  const fileName = sanitizeAssetFileName(file?.name || 'book.pdf', PDF_EXTENSION);
+  if (path.extname(fileName).toLowerCase() !== PDF_EXTENSION) {
+    throw new Error('Upload a .pdf file.');
+  }
+
+  if (!buffer.subarray(0, 5).toString('latin1').startsWith('%PDF-')) {
+    throw new Error('The uploaded file does not look like a valid PDF.');
+  }
+
+  const assetsRelativePath = await createUniqueAssetRelativePath(fileName);
+  const destination = resolveDataPath(assetsRelativePath);
+  await fs.writeFile(destination, buffer);
+  return assetsRelativePath;
+}
+
+async function readAssetBuffer(relativePath) {
+  if (!String(relativePath || '').startsWith('assets/')) {
+    throw new Error('Only stored assets can be read.');
+  }
+
+  return fs.readFile(resolveDataPath(relativePath));
 }
 
 async function pickFileAndCopy(options = {}) {
@@ -253,6 +295,8 @@ module.exports = {
   pickFileAndCopy,
   copyManyFilesToAssets,
   copyManyBuffersToAssets,
+  copyPdfBufferToAssets,
+  readAssetBuffer,
   resolveDataPath,
   exportPackage,
   importPackageByDialog,

@@ -25,6 +25,21 @@ function textToRichHtml(text = '') {
     .join('');
 }
 
+function htmlToPlainText(html = '') {
+  return String(html || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function createDocumentPage(options = {}) {
   const html =
     typeof options.html === 'string' && options.html.trim()
@@ -48,6 +63,23 @@ function createImagePage(options = {}) {
     html: '',
     imagePath: String(options.imagePath || '')
   };
+}
+
+function createPdfSource(options = {}) {
+  return {
+    assetPath: String(options.assetPath || ''),
+    fileName: String(options.fileName || ''),
+    importedAt: String(options.importedAt || ''),
+    pageCount: Number(options.pageCount || 0)
+  };
+}
+
+function normalizePdfSource(rawSource) {
+  if (!rawSource?.assetPath) {
+    return createPdfSource();
+  }
+
+  return createPdfSource(rawSource);
 }
 
 function hasLegacyText(rawPage) {
@@ -98,16 +130,82 @@ function normalizeContent(content = {}) {
     frontCover: normalizePage(frontSource, 'Book Title'),
     innerFront: normalizePage(content.innerFront, ''),
     innerBack: normalizePage(content.innerBack, ''),
-    backCover: normalizePage(backSource, '')
+    backCover: normalizePage(backSource, ''),
+    pdfSource: normalizePdfSource(content.pdfSource)
   };
+}
+
+function deriveBookTitle(content = {}, index = 0) {
+  const frontCover = content.frontCover || {};
+  const title = String(frontCover.title || '').trim();
+  if (title) {
+    return title;
+  }
+
+  const pdfFileName = String(content.pdfSource?.fileName || '').replace(/\.pdf$/i, '').trim();
+  if (pdfFileName) {
+    return pdfFileName;
+  }
+
+  const text = htmlToPlainText(frontCover.html || '').slice(0, 80).trim();
+  if (text) {
+    return text;
+  }
+
+  return `Book ${index + 1}`;
+}
+
+function createBook(options = {}) {
+  const content = normalizeContent(options.content || {});
+  const title = String(options.title || deriveBookTitle(content, 0)).trim();
+
+  return {
+    id: options.id || createId(),
+    title: title || 'Book 1',
+    description: String(options.description || ''),
+    content
+  };
+}
+
+function normalizeBook(rawBook = {}, index = 0) {
+  const source = rawBook && typeof rawBook === 'object' ? rawBook : {};
+  const content = normalizeContent(source.content || source);
+  const title = String(source.title || deriveBookTitle(content, index)).trim();
+
+  return {
+    id: String(source.id || createId()),
+    title: title || `Book ${index + 1}`,
+    description: String(source.description || ''),
+    content
+  };
+}
+
+function normalizeBooks(rawBooks, legacyContent = {}) {
+  const sourceBooks = Array.isArray(rawBooks) && rawBooks.length > 0
+    ? rawBooks
+    : [
+        {
+          title: '',
+          description: '',
+          content: legacyContent
+        }
+      ];
+
+  return sourceBooks.map((book, index) => normalizeBook(book, index));
 }
 
 module.exports = {
   createDocumentPage,
   createImagePage,
+  createPdfSource,
+  createBook,
   createId,
   normalizePage,
+  normalizePdfSource,
   normalizeContent,
+  normalizeBook,
+  normalizeBooks,
   hasPageData,
-  textToRichHtml
+  textToRichHtml,
+  htmlToPlainText
 };

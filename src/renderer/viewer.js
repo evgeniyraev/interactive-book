@@ -2,6 +2,13 @@
 
 const state = {
   config: null,
+  books: [],
+  activeBookId: '',
+  activeBook: null,
+  view: 'shelf',
+  returningToShelf: false,
+  hasOpenedActiveBook: false,
+  sourceMode: 'legacy',
   pages: [],
   special: {
     frontCover: null,
@@ -19,12 +26,24 @@ const state = {
   idleStartTimer: null,
   idleLoopTimer: null,
   idleToken: 0,
-  lastActivityAt: 0
+  lastActivityAt: 0,
+  touchSwipe: null,
+  pdfModulePromise: null,
+  pdf: {
+    sourceKey: '',
+    document: null,
+    pageImageCache: new Map()
+  }
 };
 
 const elements = {
+  shelfView: document.getElementById('shelf-view'),
+  shelfGrid: document.getElementById('shelf-grid'),
   stage: document.getElementById('book-stage'),
+  readerFrame: document.getElementById('reader-frame'),
   shell: document.getElementById('book-shell'),
+  readerMenu: document.getElementById('reader-menu'),
+  shelfButton: document.getElementById('shelf-button'),
   sideLeftStack: document.getElementById('side-left-stack'),
   sideRightStack: document.getElementById('side-right-stack'),
   baseLeft: document.getElementById('base-left'),
@@ -54,6 +73,10 @@ function lerp(start, end, t) {
   return start + (end - start) * t;
 }
 
+function isTouchLikePointer(pointerType) {
+  return pointerType === 'touch' || pointerType === 'pen';
+}
+
 function escapeHtml(value) {
   const input = String(value ?? '');
   return input
@@ -62,6 +85,57 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+function htmlToPlainText(html = '') {
+  const source = String(html || '');
+  try {
+    const doc = new DOMParser().parseFromString(source, 'text/html');
+    return (doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+  } catch {
+    return source.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+}
+
+function contentForBook(book) {
+  return book?.content || {};
+}
+
+function displayTitleForBook(book, index = 0) {
+  const content = contentForBook(book);
+  const frontCover = content.frontCover || {};
+  const pdfFileName = String(content.pdfSource?.fileName || '').replace(/\.pdf$/i, '').trim();
+  const title = String(book?.title || frontCover.title || '').trim();
+  if (title && (title !== 'Book Title' || !pdfFileName)) {
+    return title;
+  }
+
+  if (pdfFileName) {
+    return pdfFileName;
+  }
+
+  const coverText = htmlToPlainText(frontCover.html || '').slice(0, 80).trim();
+  return coverText || `Book ${index + 1}`;
+}
+
+function getBooksFromConfig(config) {
+  const sourceBooks = Array.isArray(config?.books) && config.books.length > 0
+    ? config.books
+    : [
+        {
+          id: 'legacy-book',
+          title: '',
+          description: '',
+          content: config?.content || {}
+        }
+      ];
+
+  return sourceBooks.map((book, index) => ({
+    id: String(book?.id || `book-${index + 1}`),
+    title: displayTitleForBook(book, index),
+    description: String(book?.description || ''),
+    content: contentForBook(book)
+  }));
 }
 
 function normalizeHexColor(value, fallback = '#ffffff') {
@@ -82,7 +156,7 @@ function hexToRgb(hex) {
 }
 
 function normalizeBookPage(rawPage, fallbackText = '') {
-  const type = rawPage?.type === 'image' ? 'image' : 'document';
+  const type = rawPage?.type === 'image' || rawPage?.type === 'pdf-page' ? rawPage.type : 'document';
   const text = rawPage?.text || rawPage?.title || fallbackText;
   const html = rawPage?.html || (text ? `<p>${escapeHtml(text)}</p>` : '<p></p>');
 
@@ -91,7 +165,8 @@ function normalizeBookPage(rawPage, fallbackText = '') {
     title: String(rawPage?.title || ''),
     text: String(text || ''),
     html: String(html || '<p></p>'),
-    imagePath: String(rawPage?.imagePath || '')
+    imagePath: String(rawPage?.imagePath || ''),
+    pdfPageNumber: Number(rawPage?.pdfPageNumber || 0)
   };
 }
 
@@ -156,9 +231,55 @@ function getPageBackgroundStyle() {
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
 }
 
+function hasPdfSource(content) {
+  return Boolean(content?.pdfSource?.assetPath);
+}
+
+function toUint8Array(value) {
+  if (value instanceof ArrayBuffer) {
+    return new Uint8Array(value);
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
+
+  if (Array.isArray(value)) {
+    return new Uint8Array(value);
+  }
+
+  throw new Error('Could not read PDF bytes.');
+}
+
+async function loadPdfModule() {
+  if (!state.pdfModulePromise) {
+    const moduleUrl = new URL('../../node_modules/pdfjs-dist/legacy/build/pdf.mjs', window.location.href).toString();
+    const workerUrl = new URL('../../node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs', window.location.href).toString();
+    state.pdfModulePromise = import(moduleUrl).then((pdfjsLib) => {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+      return pdfjsLib;
+    });
+  }
+
+  return state.pdfModulePromise;
+}
+
+async function releasePdfDocument() {
+  const document = state.pdf.document;
+  state.pdf = {
+    sourceKey: '',
+    document: null,
+    pageImageCache: new Map()
+  };
+
+  if (document?.destroy) {
+    await document.destroy();
+  }
+}
+
 async function prepareDocumentPage(page, fallbackText = '') {
   const normalized = normalizeBookPage(page, fallbackText);
-  if (normalized.type === 'image') {
+  if (normalized.type === 'image' || normalized.type === 'pdf-page') {
     return normalized;
   }
 
@@ -196,8 +317,68 @@ async function buildRenderablePages(rawPages) {
   return nextPages;
 }
 
+async function buildRenderablePdfPages(pdfSource) {
+  await releasePdfDocument();
+
+  const pdfjsLib = await loadPdfModule();
+  const bytes = await window.bookApi.readAsset(pdfSource.assetPath);
+  const loadingTask = pdfjsLib.getDocument({
+    data: toUint8Array(bytes),
+    useSystemFonts: true
+  });
+  const pdfDocument = await loadingTask.promise;
+
+  state.pdf = {
+    sourceKey: pdfSource.assetPath,
+    document: pdfDocument,
+    pageImageCache: new Map()
+  };
+
+  return Array.from({ length: pdfDocument.numPages }, (_item, index) => ({
+    type: 'pdf-page',
+    title: `${pdfSource.fileName || 'PDF'} - page ${index + 1}`,
+    html: '',
+    imagePath: '',
+    pdfPageNumber: index + 1
+  }));
+}
+
+async function renderPdfPageImage(pageNumber) {
+  if (!state.pdf.document || !pageNumber) {
+    return '';
+  }
+
+  if (state.pdf.pageImageCache.has(pageNumber)) {
+    return state.pdf.pageImageCache.get(pageNumber);
+  }
+
+  const pdfPage = await state.pdf.document.getPage(pageNumber);
+  const baseViewport = pdfPage.getViewport({ scale: 1 });
+  const fitScale = Math.min(getPageWidth() / baseViewport.width, getPageHeight() / baseViewport.height);
+  const pixelRatio = clamp(window.devicePixelRatio || 1, 1, 2);
+  const renderScale = clamp(fitScale * pixelRatio, 1, 3);
+  const viewport = pdfPage.getViewport({ scale: renderScale });
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  await pdfPage.render({
+    canvasContext: context,
+    viewport
+  }).promise;
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.94);
+  state.pdf.pageImageCache.set(pageNumber, dataUrl);
+  pdfPage.cleanup?.();
+  return dataUrl;
+}
+
 function getIdleRandomFlipEnabled() {
-  return Boolean(state.config?.design?.idleRandomFlipEnabled);
+  return state.view === 'reader' && Boolean(state.config?.design?.idleRandomFlipEnabled);
 }
 
 function getIdleRandomFlipDelayMs() {
@@ -398,6 +579,10 @@ function setShellTransform(shift, scale = 1) {
 }
 
 function buildSpreads() {
+  if (state.sourceMode === 'pdf') {
+    return buildPdfSpreads();
+  }
+
   const spreads = [];
 
   spreads.push({ leftSlot: null, rightSlot: { kind: 'front-cover' } });
@@ -429,6 +614,27 @@ function buildSpreads() {
   }
 
   spreads.push({ leftSlot: { kind: 'back-cover' }, rightSlot: null });
+
+  return spreads;
+}
+
+function buildPdfSpreads() {
+  const contentSequence = [];
+  for (let i = 0; i < state.pages.length; i += 1) {
+    contentSequence.push({ kind: 'content', index: i });
+  }
+
+  if (contentSequence.length === 0) {
+    return [{ leftSlot: null, rightSlot: null }];
+  }
+
+  const spreads = [{ leftSlot: null, rightSlot: contentSequence[0] }];
+  for (let i = 1; i < contentSequence.length; i += 2) {
+    spreads.push({
+      leftSlot: contentSequence[i],
+      rightSlot: contentSequence[i + 1] ?? null
+    });
+  }
 
   return spreads;
 }
@@ -495,6 +701,11 @@ async function buildSlotMarkup(slot) {
     return `<div class="page-content image"><img alt="Book page" src="${src}" draggable="false" /></div>`;
   }
 
+  if (page.type === 'pdf-page') {
+    const src = await renderPdfPageImage(page.pdfPageNumber);
+    return `<div class="page-content pdf-page"><img alt="PDF page ${page.pdfPageNumber}" src="${src}" draggable="false" /></div>`;
+  }
+
   return `<div class="page-content document"><div class="rich-content-root">${page.html || '<p></p>'}</div></div>`;
 }
 
@@ -545,7 +756,7 @@ function positionEdgeZones() {
   const edges = getVisiblePageEdges(spread);
   const zoneWidth = getEdgeZoneWidth();
 
-  if (!edges || state.flip) {
+  if (state.view !== 'reader' || state.returningToShelf || !edges || state.flip) {
     elements.edgePrevZone.classList.add('hidden');
     elements.edgeNextZone.classList.add('hidden');
     return;
@@ -707,7 +918,7 @@ function computeFlipFromStep(step, current, target) {
 }
 
 async function prepareFlip(step) {
-  if (state.isAnimating || state.flip) {
+  if (state.view !== 'reader' || state.returningToShelf || state.isAnimating || state.flip) {
     return false;
   }
 
@@ -856,6 +1067,12 @@ async function finishFlip(commit) {
 
   state.isAnimating = false;
   await renderStaticSpread();
+
+  if (commit && state.view === 'reader' && state.hasOpenedActiveBook && state.spreadIndex === 0) {
+    window.setTimeout(() => {
+      closeActiveBookToShelf({ renderCover: false });
+    }, 180);
+  }
 }
 
 function animateFlipTo(targetProgress) {
@@ -910,6 +1127,59 @@ function pointerToProgress(clientX) {
   return clamp((clientX - rect.left) / rect.width, 0, 1);
 }
 
+function touchSwipeStepFromDelta(deltaX) {
+  if (deltaX < 0) {
+    return 1;
+  }
+
+  if (deltaX > 0) {
+    return -1;
+  }
+
+  return 0;
+}
+
+function getTouchSwipeActivationDistance(rect) {
+  return clamp(rect.width * 0.012, 12, 24);
+}
+
+function getTouchFlickDistance(rect) {
+  return clamp(rect.width * 0.06, 48, 140);
+}
+
+function shouldCommitTouchFlick(swipe, flip = state.flip) {
+  if (!swipe || !flip) {
+    return false;
+  }
+
+  const elapsed = Math.max(1, swipe.lastTime - swipe.startTime);
+  const deltaX = swipe.lastX - swipe.startX;
+  const deltaY = swipe.lastY - swipe.startY;
+  const directionSign = flip.visualDirection === 'forward' ? -1 : 1;
+  const signedDeltaX = deltaX * directionSign;
+  const signedVelocityX = (deltaX / elapsed) * directionSign;
+  const horizontalDominant = Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
+
+  if (!horizontalDominant) {
+    return false;
+  }
+
+  const flickDistance = getTouchFlickDistance(flip.shellRect);
+  return signedDeltaX >= flickDistance || (signedDeltaX >= 28 && signedVelocityX >= 0.75);
+}
+
+function resetTouchSwipe(pointerId = null) {
+  if (!state.touchSwipe) {
+    return;
+  }
+
+  if (pointerId != null && state.touchSwipe.pointerId !== pointerId) {
+    return;
+  }
+
+  state.touchSwipe = null;
+}
+
 function decideStepFromPointer(clientX, rect) {
   const canGoNext = state.spreadIndex < state.spreads.length - 1;
   const canGoPrev = state.spreadIndex > 0;
@@ -935,7 +1205,7 @@ function decideStepFromPointer(clientX, rect) {
 }
 
 async function onPointerDown(event) {
-  if (state.flip || state.isAnimating) {
+  if (state.view !== 'reader' || state.returningToShelf || state.flip || state.isAnimating) {
     return;
   }
 
@@ -944,6 +1214,22 @@ async function onPointerDown(event) {
   }
 
   const rect = elements.shell.getBoundingClientRect();
+
+  if (isTouchLikePointer(event.pointerType)) {
+    state.touchSwipe = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      startTime: event.timeStamp,
+      lastTime: event.timeStamp,
+      shellRect: rect
+    };
+    elements.shell.setPointerCapture(event.pointerId);
+    return;
+  }
+
   const step = decideStepFromPointer(event.clientX, rect);
   if (!step) {
     return;
@@ -962,6 +1248,16 @@ async function onPointerDown(event) {
 }
 
 function onPointerMove(event) {
+  if (
+    state.touchSwipe &&
+    event.pointerId === state.touchSwipe.pointerId &&
+    isTouchLikePointer(event.pointerType)
+  ) {
+    state.touchSwipe.lastX = event.clientX;
+    state.touchSwipe.lastY = event.clientY;
+    state.touchSwipe.lastTime = event.timeStamp;
+  }
+
   if (!state.flip || !state.flip.dragging) {
     return;
   }
@@ -974,7 +1270,33 @@ function onPointerMove(event) {
 }
 
 function onPointerUp(event) {
+  if (
+    state.touchSwipe &&
+    event.pointerId === state.touchSwipe.pointerId &&
+    isTouchLikePointer(event.pointerType)
+  ) {
+    state.touchSwipe.lastX = event.clientX;
+    state.touchSwipe.lastY = event.clientY;
+    state.touchSwipe.lastTime = event.timeStamp;
+  }
+
+  if (!state.flip && state.touchSwipe && event.pointerId === state.touchSwipe.pointerId) {
+    const deltaX = state.touchSwipe.lastX - state.touchSwipe.startX;
+    const enoughDistance = Math.abs(deltaX) >= getTouchSwipeActivationDistance(state.touchSwipe.shellRect);
+    const step = touchSwipeStepFromDelta(deltaX);
+    const quickSwipe = shouldCommitTouchFlick(state.touchSwipe, {
+      visualDirection: step > 0 ? 'forward' : 'backward',
+      shellRect: state.touchSwipe.shellRect
+    });
+    resetTouchSwipe(event.pointerId);
+    if (step && enoughDistance && quickSwipe) {
+      triggerStep(step);
+    }
+    return;
+  }
+
   if (!state.flip || !state.flip.dragging) {
+    resetTouchSwipe(event.pointerId);
     return;
   }
 
@@ -983,11 +1305,14 @@ function onPointerUp(event) {
   }
 
   state.flip.dragging = false;
-  const shouldCommit = state.flip.progress > 0.5;
+  const shouldCommit = state.flip.progress > 0.5 || shouldCommitTouchFlick(state.touchSwipe, state.flip);
+  resetTouchSwipe(event.pointerId);
   animateFlipTo(shouldCommit ? 1 : 0);
 }
 
 function onPointerCancel(event) {
+  resetTouchSwipe(event.pointerId);
+
   if (!state.flip || !state.flip.dragging) {
     return;
   }
@@ -1019,8 +1344,135 @@ function setupTouchOpenSettings() {
   elements.touchZone.addEventListener('pointercancel', cancelHold);
 }
 
-async function resolveSpecialPages(config) {
-  const content = config.content || {};
+function getBookById(bookId) {
+  return state.books.find((book) => book.id === bookId) || null;
+}
+
+function shelfBookElement(bookId) {
+  return Array.from(elements.shelfGrid.querySelectorAll('.shelf-book'))
+    .find((element) => element.dataset.bookId === bookId) || null;
+}
+
+function getShelfMotionForBook(bookId) {
+  const target = shelfBookElement(bookId);
+  const shellRect = elements.shell.getBoundingClientRect();
+  const targetRect = target?.querySelector('.shelf-book-cover')?.getBoundingClientRect();
+
+  if (!targetRect || shellRect.width <= 0 || shellRect.height <= 0) {
+    return {
+      dx: 0,
+      dy: 0,
+      scale: 0.18
+    };
+  }
+
+  const shellCenterX = shellRect.left + shellRect.width / 2;
+  const shellCenterY = shellRect.top + shellRect.height / 2;
+  const targetCenterX = targetRect.left + targetRect.width / 2;
+  const targetCenterY = targetRect.top + targetRect.height / 2;
+
+  return {
+    dx: targetCenterX - shellCenterX,
+    dy: targetCenterY - shellCenterY,
+    scale: clamp(targetRect.width / Math.max(1, shellRect.width), 0.08, 0.32)
+  };
+}
+
+function setReaderFrameMotion(motion) {
+  elements.readerFrame.style.setProperty('--shelf-dx', `${motion.dx}px`);
+  elements.readerFrame.style.setProperty('--shelf-dy', `${motion.dy}px`);
+  elements.readerFrame.style.setProperty('--shelf-scale', String(motion.scale));
+}
+
+function waitForReaderFrameTransition() {
+  return new Promise((resolve) => {
+    let resolved = false;
+    const timeout = window.setTimeout(() => {
+      if (resolved) {
+        return;
+      }
+
+      resolved = true;
+      elements.readerFrame.removeEventListener('transitionend', onEnd);
+      resolve();
+    }, 680);
+
+    function onEnd(event) {
+      if (event.target !== elements.readerFrame || event.propertyName !== 'transform') {
+        return;
+      }
+
+      if (resolved) {
+        return;
+      }
+
+      resolved = true;
+      window.clearTimeout(timeout);
+      elements.readerFrame.removeEventListener('transitionend', onEnd);
+      resolve();
+    }
+
+    elements.readerFrame.addEventListener('transitionend', onEnd);
+  });
+}
+
+function nextFrame() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(resolve);
+    });
+  });
+}
+
+async function buildShelfBookMarkup(book, index) {
+  const content = contentForBook(book);
+  const title = displayTitleForBook(book, index);
+  const cover = normalizeBookPage(content.frontCover, title);
+  let coverMarkup = `<div class="rich-content-root">${cover.html || `<p>${escapeHtml(title)}</p>`}</div>`;
+
+  if (hasPdfSource(content)) {
+    coverMarkup = `<div class="shelf-pdf-cover"><span>PDF</span><strong>${escapeHtml(title)}</strong></div>`;
+  } else if (cover.type === 'image' && cover.imagePath) {
+    const src = await resolveAssetUrl(cover.imagePath);
+    coverMarkup = `<img alt="${escapeHtml(title)} cover" src="${src}" draggable="false" />`;
+  }
+
+  const pageCount = Array.isArray(content.pages) ? content.pages.length : 0;
+  const meta = hasPdfSource(content) ? 'PDF book' : (pageCount === 1 ? '1 page' : `${pageCount} pages`);
+
+  return `
+    <div class="shelf-book-cover">${coverMarkup}</div>
+    <div class="shelf-book-title">${escapeHtml(title)}</div>
+    <div class="shelf-book-meta">${escapeHtml(meta)}</div>
+  `;
+}
+
+async function renderShelf() {
+  elements.shelfGrid.innerHTML = '';
+
+  if (state.books.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'shelf-empty';
+    empty.textContent = 'No books available.';
+    elements.shelfGrid.append(empty);
+    return;
+  }
+
+  for (const [index, book] of state.books.entries()) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'shelf-book';
+    button.dataset.bookId = book.id;
+    button.setAttribute('aria-label', `Open ${displayTitleForBook(book, index)}`);
+    button.innerHTML = await buildShelfBookMarkup(book, index);
+    button.addEventListener('click', () => {
+      openBookFromShelf(book.id);
+    });
+    elements.shelfGrid.append(button);
+  }
+}
+
+async function resolveSpecialPages(content = {}) {
   const legacyCovers = content.covers || {};
   const frontSource = hasPageData(content.frontCover) ? content.frontCover : legacyCovers.front;
   const backSource = hasPageData(content.backCover) ? content.backCover : legacyCovers.back;
@@ -1033,23 +1485,164 @@ async function resolveSpecialPages(config) {
   };
 }
 
+async function loadBookIntoReader(book, options = {}) {
+  const content = contentForBook(book);
+  state.activeBook = book;
+  state.activeBookId = book.id;
+
+  if (hasPdfSource(content)) {
+    state.sourceMode = 'pdf';
+    try {
+      state.pages = await buildRenderablePdfPages(content.pdfSource);
+    } catch (error) {
+      console.error('Could not render PDF source:', error);
+      state.sourceMode = 'legacy';
+      await releasePdfDocument();
+      state.pages = await buildRenderablePages(content.pages || []);
+    }
+  } else {
+    state.sourceMode = 'legacy';
+    await releasePdfDocument();
+    state.pages = await buildRenderablePages(content.pages || []);
+  }
+
+  state.special = await resolveSpecialPages(content);
+  state.spreads = buildSpreads();
+
+  const maxSpread = state.spreads.length - 1;
+  const defaultSpread = state.sourceMode === 'pdf' ? 0 : Math.min(1, maxSpread);
+  const requestedSpread = typeof options.spreadIndex === 'number' ? options.spreadIndex : defaultSpread;
+  state.spreadIndex = clamp(requestedSpread, 0, maxSpread);
+  state.flip = null;
+  state.isAnimating = false;
+  resetTouchSwipe();
+
+  await renderStaticSpread();
+}
+
+async function showShelfOnly() {
+  state.view = 'shelf';
+  state.returningToShelf = false;
+  state.hasOpenedActiveBook = false;
+  clearIdleRandomFlipTimers();
+  resetTouchSwipe();
+  elements.readerFrame.classList.remove('from-shelf', 'to-shelf');
+  elements.readerFrame.style.opacity = '';
+  elements.stage.classList.add('hidden');
+  elements.readerMenu.classList.add('hidden');
+  elements.shelfView.classList.remove('hidden');
+  await renderShelf();
+  positionEdgeZones();
+}
+
+async function openBookFromShelf(bookId) {
+  if (state.returningToShelf || state.isAnimating || state.flip) {
+    return;
+  }
+
+  const book = getBookById(bookId);
+  if (!book) {
+    return;
+  }
+
+  stopActiveAnimation();
+  clearIdleRandomFlipTimers();
+  state.view = 'reader';
+  state.returningToShelf = false;
+  state.hasOpenedActiveBook = false;
+  elements.readerFrame.classList.remove('from-shelf', 'to-shelf');
+  elements.readerFrame.style.opacity = '0';
+  elements.stage.classList.remove('hidden');
+  elements.readerMenu.classList.remove('hidden');
+
+  await loadBookIntoReader(book);
+  state.hasOpenedActiveBook = state.sourceMode !== 'pdf' && state.spreadIndex > 0;
+  elements.edgePrevZone.classList.add('hidden');
+  elements.edgeNextZone.classList.add('hidden');
+
+  const motion = getShelfMotionForBook(book.id);
+  setReaderFrameMotion(motion);
+  elements.readerFrame.classList.add('from-shelf');
+  elements.readerFrame.style.opacity = '';
+  elements.readerFrame.getBoundingClientRect();
+
+  await nextFrame();
+  elements.readerFrame.classList.remove('from-shelf');
+  await waitForReaderFrameTransition();
+  elements.shelfView.classList.add('hidden');
+  positionEdgeZones();
+  noteUserActivity(true);
+}
+
+async function closeActiveBookToShelf(options = {}) {
+  if (state.view !== 'reader' || state.returningToShelf) {
+    return;
+  }
+
+  state.returningToShelf = true;
+  stopActiveAnimation();
+  clearIdleRandomFlipTimers();
+  resetTouchSwipe();
+  state.flip = null;
+  state.isAnimating = false;
+  elements.edgePrevZone.classList.add('hidden');
+  elements.edgeNextZone.classList.add('hidden');
+  elements.readerMenu.classList.add('hidden');
+
+  if (options.renderCover !== false) {
+    if (state.sourceMode !== 'pdf') {
+      state.spreadIndex = 0;
+    }
+    await renderStaticSpread();
+  }
+
+  await renderShelf();
+  elements.shelfView.classList.remove('hidden');
+  const motion = getShelfMotionForBook(state.activeBookId);
+  setReaderFrameMotion(motion);
+  elements.readerFrame.classList.remove('from-shelf');
+  elements.readerFrame.getBoundingClientRect();
+  elements.readerFrame.classList.add('to-shelf');
+
+  await waitForReaderFrameTransition();
+  elements.readerFrame.classList.remove('to-shelf');
+  elements.stage.classList.add('hidden');
+  state.view = 'shelf';
+  state.returningToShelf = false;
+  state.hasOpenedActiveBook = false;
+  state.activeBook = null;
+  positionEdgeZones();
+}
+
 async function reloadFromConfig() {
   stopActiveAnimation();
   state.resolvedAssetCache.clear();
 
+  const previousActiveBookId = state.activeBookId;
+  const previousSpreadIndex = state.spreadIndex;
+  const wasReading = state.view === 'reader' && !state.returningToShelf;
+
   state.config = await window.bookApi.getConfig();
+  state.books = getBooksFromConfig(state.config);
+  state.activeBookId = previousActiveBookId || state.config.activeBookId || state.books[0]?.id || '';
   await applyDesign();
-  state.pages = await buildRenderablePages(state.config.content?.pages || []);
-  state.special = await resolveSpecialPages(state.config);
-  state.spreads = buildSpreads();
+  await renderShelf();
 
-  const maxSpread = state.spreads.length - 1;
-  state.spreadIndex = clamp(state.spreadIndex, 0, maxSpread);
-  state.flip = null;
-  state.isAnimating = false;
+  if (wasReading) {
+    const book = getBookById(state.activeBookId) || state.books[0];
+    if (book) {
+      state.view = 'reader';
+      elements.stage.classList.remove('hidden');
+      elements.readerMenu.classList.remove('hidden');
+      elements.shelfView.classList.add('hidden');
+      await loadBookIntoReader(book, { spreadIndex: previousSpreadIndex });
+      state.hasOpenedActiveBook = state.sourceMode !== 'pdf' && state.spreadIndex > 0;
+      noteUserActivity(true);
+      return;
+    }
+  }
 
-  await renderStaticSpread();
-  noteUserActivity(true);
+  await showShelfOnly();
 }
 
 async function triggerStep(step) {
@@ -1072,6 +1665,10 @@ function setupEvents() {
     triggerStep(-1);
   });
 
+  elements.shelfButton.addEventListener('click', () => {
+    closeActiveBookToShelf();
+  });
+
   elements.shell.addEventListener('pointerdown', onPointerDown);
   elements.shell.addEventListener('pointermove', onPointerMove);
   elements.shell.addEventListener('pointerup', onPointerUp);
@@ -1085,6 +1682,14 @@ function setupEvents() {
 
   window.addEventListener('keydown', (event) => {
     noteUserActivity();
+
+    if (state.view !== 'reader') {
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      closeActiveBookToShelf();
+    }
 
     if (event.key === 'ArrowRight') {
       triggerStep(1);

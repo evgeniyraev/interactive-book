@@ -65,6 +65,10 @@ label {
   display: none !important;
 }
 
+.legacy-editor {
+  display: none !important;
+}
+
 .shell {
   width: min(1500px, calc(100% - 2rem));
   margin: 0 auto;
@@ -112,7 +116,7 @@ label {
 
 .workspace {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: 340px minmax(0, 1fr);
   gap: 1rem;
   margin-top: 1rem;
 }
@@ -144,6 +148,20 @@ label {
   word-break: break-word;
 }
 
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid #d7e0f2;
+}
+
+.sidebar-section h3 {
+  margin: 0;
+  color: #253958;
+  font-size: 0.95rem;
+}
+
 .sidebar-actions,
 .row-actions,
 .pane-tabs {
@@ -152,15 +170,24 @@ label {
   gap: 0.55rem;
 }
 
+.book-list,
 .item-list {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  max-height: calc(100vh - 270px);
   overflow: auto;
   padding-right: 0.25rem;
 }
 
+.book-list {
+  max-height: 34vh;
+}
+
+.item-list {
+  max-height: calc(100vh - 270px);
+}
+
+.book-button,
 .item-button {
   text-align: left;
   padding: 0.75rem 0.8rem;
@@ -170,20 +197,24 @@ label {
   border: 1px solid transparent;
 }
 
+.book-button.active,
 .item-button.active {
   background: #e6eeff;
   border-color: #9bb4ef;
 }
 
+.book-button.dragging,
 .item-button.dragging {
   opacity: 0.45;
 }
 
+.book-button.drop-target,
 .item-button.drop-target {
   border-color: #4a74db;
   box-shadow: 0 0 0 2px rgb(74 116 219 / 18%);
 }
 
+.book-button small,
 .item-button small {
   display: block;
   margin-top: 0.25rem;
@@ -205,6 +236,130 @@ label {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+}
+
+.book-meta-grid,
+.page-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.pdf-import-panel {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.82fr) minmax(320px, 1.18fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.pdf-copy {
+  padding: 1rem;
+}
+
+.pdf-copy h2,
+.pdf-copy p {
+  margin: 0;
+}
+
+.pdf-copy h2 {
+  font-size: clamp(1.65rem, 2.8vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.045em;
+  color: #14244a;
+}
+
+.pdf-copy p:not(.eyebrow) {
+  margin-top: 0.9rem;
+  color: #51627f;
+  line-height: 1.55;
+  max-width: 46rem;
+}
+
+.eyebrow {
+  margin-bottom: 0.55rem;
+  color: #2445a7;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.pdf-drop-zone {
+  min-height: 310px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0.65rem;
+  padding: 2rem;
+  border: 2px dashed #89a4e5;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 15% 18%, rgb(255 255 255 / 72%), transparent 31%),
+    linear-gradient(135deg, #eaf1ff 0%, #f7fbff 52%, #edf6f2 100%);
+  color: #14244a;
+  text-align: center;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 80%);
+}
+
+.pdf-drop-zone strong {
+  font-size: clamp(1.2rem, 2vw, 1.75rem);
+}
+
+.pdf-drop-zone small {
+  max-width: 27rem;
+  color: #51627f;
+  line-height: 1.45;
+}
+
+.pdf-drop-zone.drag-over {
+  border-color: #173ea6;
+  background:
+    radial-gradient(circle at 50% 0%, rgb(43 89 210 / 18%), transparent 35%),
+    linear-gradient(135deg, #dfe9ff 0%, #f8fbff 100%);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 92%),
+    0 22px 60px rgb(38 74 160 / 16%);
+}
+
+.pdf-drop-icon {
+  width: 78px;
+  height: 78px;
+  display: grid;
+  place-items: center;
+  border-radius: 20px;
+  background: #173ea6;
+  color: #fff;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  box-shadow: 0 18px 34px rgb(23 62 166 / 25%);
+}
+
+.pdf-current-card {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border: 1px solid #d7e0f2;
+  border-radius: 18px;
+  background: #f8fbff;
+}
+
+.pdf-current-label {
+  color: #5c6e8d;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pdf-current-card strong {
+  color: #14244a;
+  font-size: 1.05rem;
+  word-break: break-word;
+}
+
+.pdf-current-card small {
+  color: #51627f;
 }
 
 .page-meta-grid {
@@ -447,6 +602,10 @@ label {
   .item-list {
     max-height: none;
   }
+
+  .pdf-import-panel {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
@@ -460,6 +619,7 @@ label {
     flex-direction: column;
   }
 
+  .book-meta-grid,
   .page-meta-grid {
     grid-template-columns: 1fr;
   }

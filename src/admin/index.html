@@ -13,7 +13,7 @@
       <header class="topbar">
         <div>
           <h1>Interactive Book Admin</h1>
-          <p>Rich page editing, pagination-ready content, and local user management.</p>
+          <p>Upload one formatted PDF and publish it as a page-flipping book.</p>
         </div>
         <div class="topbar-actions">
           <span id="sessionBadge" class="session-badge"></span>
@@ -57,17 +57,29 @@
         <section id="workspaceView" class="workspace hidden">
           <aside class="sidebar card">
             <div class="sidebar-head">
-              <h2>Book Items</h2>
+              <h2>Library</h2>
               <p id="serverUrl"></p>
             </div>
 
             <div class="sidebar-actions">
-              <button id="addDocumentButton" type="button">Add rich section</button>
-              <button id="addImagePageButton" type="button">Add image page</button>
+              <button id="addBookButton" type="button">Add book</button>
+              <button id="moveBookUpButton" type="button" class="secondary">Move up</button>
+              <button id="moveBookDownButton" type="button" class="secondary">Move down</button>
+              <button id="removeBookButton" type="button" class="secondary">Remove book</button>
               <button id="saveContentButton" type="button" class="primary">Save content</button>
             </div>
 
-            <div id="itemList" class="item-list"></div>
+            <div id="bookList" class="book-list"></div>
+
+            <div class="sidebar-section legacy-editor">
+              <h3>Book Items</h3>
+              <div class="sidebar-actions">
+                <button id="addDocumentButton" type="button">Add rich section</button>
+                <button id="addImagePageButton" type="button">Add image page</button>
+              </div>
+            </div>
+
+            <div id="itemList" class="item-list legacy-editor"></div>
           </aside>
 
           <section class="editor-area">
@@ -77,7 +89,45 @@
             </nav>
 
             <section id="pagesPane" class="card pane">
-              <div class="page-meta-grid">
+              <div class="book-meta-grid">
+                <label>
+                  Book title
+                  <input id="bookTitleInput" />
+                </label>
+
+                <label>
+                  Shelf description
+                  <input id="bookDescriptionInput" />
+                </label>
+              </div>
+
+              <section class="pdf-import-panel" aria-labelledby="pdfImportTitle">
+                <div class="pdf-copy">
+                  <p class="eyebrow">PDF book source</p>
+                  <h2 id="pdfImportTitle">Drag and drop a formatted PDF</h2>
+                  <p>
+                    The uploaded PDF becomes the source of the interactive book. Each PDF page is rendered in the viewer and uses the existing flip animation.
+                  </p>
+                </div>
+
+                <button id="pdfDropZone" class="pdf-drop-zone" type="button">
+                  <span class="pdf-drop-icon">PDF</span>
+                  <strong>Drop PDF here or click to choose</strong>
+                  <small>Use a finished, formatted PDF. Uploading a new file replaces the active book.</small>
+                </button>
+
+                <div class="pdf-current-card">
+                  <span class="pdf-current-label">Current book</span>
+                  <strong id="pdfFileName">No PDF uploaded</strong>
+                  <small id="pdfImportedAt">The viewer will keep showing the legacy rich-content book until a PDF is uploaded.</small>
+                </div>
+
+                <div class="row-actions">
+                  <button id="removePdfButton" type="button" class="secondary">Clear PDF source</button>
+                </div>
+              </section>
+
+              <div class="page-meta-grid legacy-editor">
                 <label>
                   Label
                   <input id="itemTitleInput" />
@@ -92,13 +142,13 @@
                 </label>
               </div>
 
-              <div class="row-actions">
+              <div class="row-actions legacy-editor">
                 <button id="moveUpButton" type="button" class="secondary">Move up</button>
                 <button id="moveDownButton" type="button" class="secondary">Move down</button>
                 <button id="removeItemButton" type="button" class="secondary">Remove</button>
               </div>
 
-              <div id="documentEditorPanel">
+              <div id="documentEditorPanel" class="legacy-editor">
                 <div id="editorToolbar">
                   <span class="ql-formats">
                     <select class="ql-header">
@@ -159,7 +209,7 @@
                 <div id="paginationLab" class="pagination-lab" aria-hidden="true"></div>
               </div>
 
-              <div id="imageEditorPanel" class="hidden">
+              <div id="imageEditorPanel" class="hidden legacy-editor">
                 <div class="row-actions">
                   <button id="choosePageImageButton" type="button">Choose image</button>
                 </div>
@@ -208,6 +258,7 @@
     </div>
 
     <input id="assetUploadInput" type="file" accept="image/*" hidden />
+    <input id="pdfUploadInput" type="file" accept="application/pdf,.pdf" hidden />
 
     <script src="/vendor/quill/quill.js"></script>
     <script src="/renderer-static/richContentRuntime.js"></script>

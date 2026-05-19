@@ -1,4 +1,18 @@
-const { createDocumentPage } = require('./contentModel');
+const { createBook, createDocumentPage, createPdfSource } = require('./contentModel');
+
+const defaultContent = {
+  frontCover: createDocumentPage({ text: 'Book Title' }),
+  innerFront: createDocumentPage({ text: '' }),
+  innerBack: createDocumentPage({ text: '' }),
+  backCover: createDocumentPage({ text: '' }),
+  pages: [createDocumentPage()],
+  pdfSource: createPdfSource()
+};
+
+const defaultBook = createBook({
+  title: 'Book Title',
+  content: defaultContent
+});
 
 const defaultConfig = {
   mode: {
@@ -27,13 +41,9 @@ const defaultConfig = {
       height: 1200
     }
   },
-  content: {
-    frontCover: createDocumentPage({ text: 'Book Title' }),
-    innerFront: createDocumentPage({ text: '' }),
-    innerBack: createDocumentPage({ text: '' }),
-    backCover: createDocumentPage({ text: '' }),
-    pages: [createDocumentPage()]
-  },
+  content: defaultBook.content,
+  books: [defaultBook],
+  activeBookId: defaultBook.id,
   autoupdate: {
     policy: 'everything',
     detectExternalContent: false,

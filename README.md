@@ -14,6 +14,7 @@ Desktop fullscreen interactive book app with two runtime modes:
   - `admin panel`: local server toggle, port, open-browser shortcut.
   - `autoupdate`: update policy (`everything`, `minor`, `patch`), removable-drive sync toggle, export/import package.
 - Local admin web panel:
+  - drag-and-drop PDF upload for turning a finished PDF into the active flipbook
   - rich WYSIWYG page editing powered by Quill
   - inline images with wrap-left, wrap-right, centered, or no-wrap layout
   - intentional page breaks inside rich content
@@ -54,6 +55,18 @@ npm run dev:admin
 ```
 
 Development runs compile a built-in superadmin with credentials `admin` / `admin` unless overridden in the environment.
+
+Clear local saved app data, including stored config, assets, imported books, and local admin/editor users:
+
+```bash
+npm run clear:data
+```
+
+Preview the directories before deleting them:
+
+```bash
+npm run clear:data -- --dry-run
+```
 
 For production-style run:
 

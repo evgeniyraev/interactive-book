@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('bookApi', {
   pickAsset: (kind) => ipcRenderer.invoke('asset:pick', kind),
   importAssetsFromPaths: (filePaths) => ipcRenderer.invoke('asset:import-paths', filePaths),
   importAssetsFromFiles: (files) => ipcRenderer.invoke('asset:import-files', files),
+  readAsset: (relativePath) => ipcRenderer.invoke('asset:read', relativePath),
   resolveAssetUrl: (relativePath) => ipcRenderer.invoke('asset:resolve', relativePath),
   exportPackage: () => ipcRenderer.invoke('package:export'),
   importPackage: () => ipcRenderer.invoke('package:import'),

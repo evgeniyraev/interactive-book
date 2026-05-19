@@ -1,6 +1,6 @@
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron');
 const {
   getConfig,
   setConfig,
@@ -10,6 +10,7 @@ const {
   pickFileAndCopy,
   copyManyFilesToAssets,
   copyManyBuffersToAssets,
+  readAssetBuffer,
   resolveDataPath,
   exportPackage,
   importPackageByDialog
@@ -99,6 +100,9 @@ function createMainWindow() {
 
 function createSettingsWindow() {
   if (settingsWindow && !settingsWindow.isDestroyed()) {
+    if (settingsWindow.isMinimized()) {
+      settingsWindow.restore();
+    }
     settingsWindow.focus();
     return settingsWindow;
   }
@@ -122,6 +126,54 @@ function createSettingsWindow() {
   });
 
   return settingsWindow;
+}
+
+function createSettingsMenuItem() {
+  return {
+    label: 'Settings...',
+    accelerator: 'CmdOrCtrl+,',
+    click: () => {
+      createSettingsWindow();
+    }
+  };
+}
+
+function setupApplicationMenu() {
+  const template = [
+    ...(process.platform === 'darwin'
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' },
+              { type: 'separator' },
+              createSettingsMenuItem(),
+              { type: 'separator' },
+              { role: 'services' },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { role: 'quit' }
+            ]
+          }
+        ]
+      : [
+          {
+            label: 'File',
+            submenu: [
+              createSettingsMenuItem(),
+              { type: 'separator' },
+              { role: 'quit' }
+            ]
+          }
+        ]),
+    { role: 'editMenu' },
+    { role: 'windowMenu' }
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 function startOrStopExternalSync() {
@@ -182,6 +234,11 @@ function registerIpcHandlers() {
     return copyManyBuffersToAssets(safeFiles);
   });
 
+  ipcMain.handle('asset:read', async (_, relativePath) => {
+    const buffer = await readAssetBuffer(relativePath);
+    return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+  });
+
   ipcMain.handle('package:export', () => exportPackage());
 
   ipcMain.handle('package:import', async () => {
@@ -219,6 +276,7 @@ function registerIpcHandlers() {
 app.whenReady().then(async () => {
   const { createdConfig } = await ensureDataDirectories();
   registerIpcHandlers();
+  setupApplicationMenu();
   createMainWindow();
 
   if (!isDev && createdConfig) {
