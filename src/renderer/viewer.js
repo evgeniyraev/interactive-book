@@ -29,6 +29,7 @@ const state = {
   idleToken: 0,
   lastActivityAt: 0,
   touchSwipe: null,
+  mouseSwipe: null,
   pdfModulePromise: null,
   shelfPdfPreviewCache: new Map(),
   pdf: {
@@ -818,7 +819,7 @@ function resetPeelEffect() {
   state.peelInstance = null;
   clearPeelClipDefinitions();
 
-  elements.flipSheet.classList.remove('peel-ready', 'peel-mode');
+  elements.flipSheet.classList.remove('peel-ready', 'peel-mode', 'top-corner-mode');
   [elements.flipFront, elements.flipBack, elements.flipBottom].forEach(resetPeelLayer);
 }
 
@@ -1059,10 +1060,7 @@ function setupPeelForFlip(flip) {
 
   configurePeelPath(peel);
   state.peelInstance = peel;
-
-  if (flip.visualDirection === 'backward') {
-    elements.flipSheet.style.transform = 'scaleX(-1)';
-  }
+  applyPeelRootTransform();
 }
 
 function applyPeelProgress(progress) {
@@ -1072,6 +1070,140 @@ function applyPeelProgress(progress) {
   }
 
   peel.setTimeAlongPath(clamp(progress, 0, 1));
+}
+
+function clientToPeelPoint(clientX, clientY) {
+  const peel = state.peelInstance;
+  if (!peel || !state.flip) {
+    return null;
+  }
+
+  const rect = elements.flipSheet.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) {
+    return null;
+  }
+
+  const rawX = ((clientX - rect.left) / rect.width) * peel.width;
+  const rawY = ((clientY - rect.top) / rect.height) * peel.height;
+  const localX = state.flip.visualDirection === 'backward' ? peel.width - rawX : rawX;
+  const edgeInset = getPeelEdgeInset(peel);
+
+  return {
+    x: clamp(localX, peel.width * -1.15, peel.width * 1.08),
+    rawY,
+    y: clamp(rawY, 0, peel.height * 1.04),
+    edgeY: clamp(rawY, edgeInset, peel.height - edgeInset),
+    outerDistance: Math.abs(peel.width - localX)
+  };
+}
+
+function getPeelEdgeInset(peel) {
+  return clamp(peel.height * 0.026, 10, 28);
+}
+
+function applyPeelRootTransform() {
+  if (!state.flip) {
+    elements.flipSheet.style.transform = '';
+    elements.flipSheet.classList.remove('top-corner-mode');
+    return;
+  }
+
+  const transforms = [];
+  if (state.flip.visualDirection === 'backward') {
+    transforms.push('scaleX(-1)');
+  }
+
+  if (state.flip.peelDragMode === 'top-corner') {
+    transforms.push('scaleY(-1)');
+  }
+
+  elements.flipSheet.style.transform = transforms.join(' ');
+  elements.flipSheet.classList.toggle('top-corner-mode', state.flip.peelDragMode === 'top-corner');
+}
+
+function rememberPeelCorner(y, mode) {
+  const peel = state.peelInstance;
+  if (!peel || !state.flip) {
+    return;
+  }
+
+  state.flip.peelDragMode = mode;
+  state.flip.peelCornerY = y;
+  peel.setCorner(peel.width, y);
+  applyPeelRootTransform();
+}
+
+function setPeelDragCorner(point) {
+  const peel = state.peelInstance;
+  if (!peel || !state.flip || !point) {
+    return;
+  }
+
+  const cornerSnapDistance = clamp(peel.height * 0.075, 36, 84);
+  const cornerOuterDistance = clamp(peel.width * 0.12, 42, 96);
+  if (point.rawY <= cornerSnapDistance && point.outerDistance <= cornerOuterDistance) {
+    rememberPeelCorner(peel.height, 'top-corner');
+    return;
+  }
+
+  if (point.rawY >= peel.height - cornerSnapDistance && point.outerDistance <= cornerOuterDistance) {
+    rememberPeelCorner(peel.height, 'bottom-corner');
+    return;
+  }
+
+  rememberPeelCorner(point.edgeY, 'edge');
+}
+
+function pointForPeel(point) {
+  const peel = state.peelInstance;
+  if (!peel || !state.flip || !point) {
+    return point;
+  }
+
+  if (state.flip.peelDragMode !== 'top-corner') {
+    return point;
+  }
+
+  return {
+    ...point,
+    y: peel.height - clamp(point.rawY, 0, peel.height)
+  };
+}
+
+function updatePeelDragCorner(point) {
+  const peel = state.peelInstance;
+  if (!peel || !state.flip || !point) {
+    return;
+  }
+
+  if (state.flip.peelDragMode === 'edge') {
+    rememberPeelCorner(point.edgeY, 'edge');
+  }
+}
+
+function applyPeelPointerDrag(clientX, clientY, initialize = false) {
+  const peel = state.peelInstance;
+  const point = clientToPeelPoint(clientX, clientY);
+  if (!peel || !point) {
+    applyFlipProgress(pointerToProgress(clientX));
+    return;
+  }
+
+  if (initialize) {
+    setPeelDragCorner(point);
+  } else {
+    updatePeelDragCorner(point);
+  }
+
+  if (state.flip.peelDragMode === 'top-corner' || state.flip.peelDragMode === 'bottom-corner') {
+    point.y = clamp(point.y, 0, peel.height);
+  }
+
+  const peelPoint = pointForPeel(point);
+  applyFlipProgress(pointerToProgress(clientX), { skipPeelPath: true });
+  peel.setPeelPosition(peelPoint.x, peelPoint.y);
+  state.flip.peelWasDragged = true;
+  state.flip.peelPoint = peelPoint;
 }
 
 async function prepareFlip(step) {
@@ -1133,7 +1265,7 @@ async function prepareFlip(step) {
   return true;
 }
 
-function applyFlipProgress(progress) {
+function applyFlipProgress(progress, options = {}) {
   if (!state.flip) {
     return;
   }
@@ -1147,7 +1279,9 @@ function applyFlipProgress(progress) {
   const lift = bend * 14;
 
   if (state.flip.usePeel) {
-    applyPeelProgress(state.flip.progress);
+    if (!options.skipPeelPath) {
+      applyPeelProgress(state.flip.progress);
+    }
   } else {
     elements.flipSheet.style.transform = `translateZ(${lift}px) rotateY(${angle}deg) skewY(${skew}deg)`;
   }
@@ -1246,8 +1380,74 @@ async function finishFlip(commit) {
   }
 }
 
-function animateFlipTo(targetProgress) {
+function animateDraggedPeelTo(targetProgress, options = {}) {
+  if (!state.flip || !state.peelInstance) {
+    return;
+  }
+
+  stopActiveAnimation();
+  state.isAnimating = true;
+
+  const peel = state.peelInstance;
+  const startProgress = state.flip.progress;
+  const distance = Math.abs(targetProgress - startProgress);
+  const baseDuration = Math.max(220, Number(state.config.design.turnAnimationMs) || 700);
+  const duration = Math.max(120, baseDuration * distance);
+  const startPoint = state.flip.peelPoint || {
+    x: lerp(peel.width, -peel.width * 0.9, startProgress),
+    y: state.flip.peelCornerY ?? peel.height
+  };
+  const edgeInset = getPeelEdgeInset(peel);
+  const fallbackCornerY = clamp(startPoint.edgeY ?? startPoint.y, edgeInset, peel.height - edgeInset);
+  const cornerY = state.flip.peelCornerY ?? fallbackCornerY;
+  const commitX = -peel.width * 0.95;
+  const endPoint = targetProgress > 0.5
+    ? { x: commitX, y: cornerY }
+    : { x: peel.width, y: cornerY };
+  const startTime = performance.now();
+
+  rememberPeelCorner(cornerY, state.flip.peelDragMode || 'edge');
+
+  const tick = (now) => {
+    if (!state.flip || !state.peelInstance) {
+      state.isAnimating = false;
+      return;
+    }
+
+    const elapsed = now - startTime;
+    const t = clamp(elapsed / duration, 0, 1);
+    const eased = t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) ** 2) / 2;
+    const value = lerp(startProgress, targetProgress, eased);
+    const point = {
+      x: lerp(startPoint.x, endPoint.x, eased),
+      y: lerp(startPoint.y, endPoint.y, eased)
+    };
+
+    applyFlipProgress(value, { skipPeelPath: true });
+    state.peelInstance.setPeelPosition(point.x, point.y);
+    state.flip.peelPoint = point;
+
+    if (t < 1) {
+      state.animationFrame = requestAnimationFrame(tick);
+      return;
+    }
+
+    state.animationFrame = null;
+    finishFlip(targetProgress > 0.5).then(() => {
+      options.onComplete?.();
+    });
+  };
+
+  state.animationFrame = requestAnimationFrame(tick);
+}
+
+function animateFlipTo(targetProgress, options = {}) {
   if (!state.flip) {
+    return;
+  }
+
+  if (state.flip.usePeel && state.flip.peelWasDragged) {
+    animateDraggedPeelTo(targetProgress, options);
     return;
   }
 
@@ -1279,7 +1479,9 @@ function animateFlipTo(targetProgress) {
     }
 
     state.animationFrame = null;
-    finishFlip(targetProgress > 0.5);
+    finishFlip(targetProgress > 0.5).then(() => {
+      options.onComplete?.();
+    });
   };
 
   state.animationFrame = requestAnimationFrame(tick);
@@ -1339,6 +1541,38 @@ function shouldCommitTouchFlick(swipe, flip = state.flip) {
   return signedDeltaX >= flickDistance || (signedDeltaX >= 28 && signedVelocityX >= 0.75);
 }
 
+function quickFlickStep(gesture) {
+  if (!gesture?.shellRect) {
+    return 0;
+  }
+
+  const elapsed = Math.max(1, gesture.lastTime - gesture.startTime);
+  const deltaX = gesture.lastX - gesture.startX;
+  const deltaY = gesture.lastY - gesture.startY;
+  const horizontalDominant = Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
+  if (!horizontalDominant) {
+    return 0;
+  }
+
+  const distance = Math.abs(deltaX);
+  const velocity = Math.abs(deltaX / elapsed);
+  const flickDistance = getTouchFlickDistance(gesture.shellRect);
+  const isFlick = distance >= flickDistance || (distance >= 28 && velocity >= 0.62);
+  if (!isFlick) {
+    return 0;
+  }
+
+  return deltaX < 0 ? 1 : -1;
+}
+
+function stepForFlip(flip) {
+  if (!flip) {
+    return 0;
+  }
+
+  return flip.targetSpreadIndex > flip.sourceSpreadIndex ? 1 : -1;
+}
+
 function resetTouchSwipe(pointerId = null) {
   if (!state.touchSwipe) {
     return;
@@ -1349,6 +1583,59 @@ function resetTouchSwipe(pointerId = null) {
   }
 
   state.touchSwipe = null;
+}
+
+function resetMouseSwipe(pointerId = null) {
+  if (!state.mouseSwipe) {
+    return;
+  }
+
+  if (pointerId != null && state.mouseSwipe.pointerId !== pointerId) {
+    return;
+  }
+
+  state.mouseSwipe = null;
+}
+
+async function maybeStartTouchFlip(event) {
+  const swipe = state.touchSwipe;
+  if (!swipe || state.flip || state.isAnimating || swipe.activating) {
+    return;
+  }
+
+  const deltaX = swipe.lastX - swipe.startX;
+  const deltaY = swipe.lastY - swipe.startY;
+  const enoughDistance = Math.abs(deltaX) >= getTouchSwipeActivationDistance(swipe.shellRect);
+  const horizontalDominant = Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
+  const step = touchSwipeStepFromDelta(deltaX);
+
+  if (!step || !enoughDistance || !horizontalDominant) {
+    return;
+  }
+
+  swipe.activating = true;
+  const ready = await prepareFlip(step);
+  swipe.activating = false;
+
+  if (!ready || !state.flip || state.touchSwipe !== swipe) {
+    return;
+  }
+
+  state.flip.dragging = true;
+  state.flip.pointerId = event.pointerId;
+  state.flip.dragStartX = swipe.startX;
+  state.flip.dragStartY = swipe.startY;
+  state.flip.dragStartTime = swipe.startTime;
+  state.flip.dragLastX = swipe.lastX;
+  state.flip.dragLastY = swipe.lastY;
+  state.flip.dragLastTime = swipe.lastTime;
+  state.flip.startedFromEdgeZone = false;
+
+  if (state.flip.usePeel) {
+    applyPeelPointerDrag(swipe.lastX, swipe.lastY, true);
+  } else {
+    applyFlipProgress(pointerToProgress(swipe.lastX));
+  }
 }
 
 function decideStepFromPointer(clientX, rect) {
@@ -1375,6 +1662,19 @@ function decideStepFromPointer(clientX, rect) {
   return 0;
 }
 
+function captureReaderPointer(event) {
+  const target = event.currentTarget || elements.shell;
+  try {
+    target.setPointerCapture?.(event.pointerId);
+  } catch {
+    try {
+      elements.shell.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture is an optimization for continuity; dragging still works without it.
+    }
+  }
+}
+
 async function onPointerDown(event) {
   if (state.view !== 'reader' || state.returningToShelf || state.flip || state.isAnimating) {
     return;
@@ -1397,7 +1697,7 @@ async function onPointerDown(event) {
       lastTime: event.timeStamp,
       shellRect: rect
     };
-    elements.shell.setPointerCapture(event.pointerId);
+    captureReaderPointer(event);
     return;
   }
 
@@ -1406,19 +1706,71 @@ async function onPointerDown(event) {
     return;
   }
 
+  const mouseSwipe = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    lastX: event.clientX,
+    lastY: event.clientY,
+    startTime: event.timeStamp,
+    lastTime: event.timeStamp,
+    shellRect: rect,
+    released: false,
+    cancelled: false,
+    startedFromEdgeZone:
+      event.currentTarget === elements.edgePrevZone || event.currentTarget === elements.edgeNextZone
+  };
+  state.mouseSwipe = mouseSwipe;
+  captureReaderPointer(event);
+
   const ready = await prepareFlip(step);
   if (!ready || !state.flip) {
+    if (state.mouseSwipe === mouseSwipe) {
+      resetMouseSwipe(event.pointerId);
+    }
     return;
   }
 
-  state.flip.dragging = true;
-  state.flip.pointerId = event.pointerId;
+  if (mouseSwipe.cancelled || state.mouseSwipe !== mouseSwipe) {
+    await finishFlip(false);
+    return;
+  }
 
-  elements.shell.setPointerCapture(event.pointerId);
-  applyFlipProgress(pointerToProgress(event.clientX));
+  state.flip.dragging = !mouseSwipe.released;
+  state.flip.pointerId = event.pointerId;
+  state.flip.dragStartX = mouseSwipe.startX;
+  state.flip.dragStartY = mouseSwipe.startY;
+  state.flip.dragStartTime = mouseSwipe.startTime;
+  state.flip.dragLastX = mouseSwipe.lastX;
+  state.flip.dragLastY = mouseSwipe.lastY;
+  state.flip.dragLastTime = mouseSwipe.lastTime;
+  state.flip.startedFromEdgeZone = mouseSwipe.startedFromEdgeZone;
+
+  if (state.flip.usePeel) {
+    applyPeelPointerDrag(mouseSwipe.lastX, mouseSwipe.lastY, true);
+  } else {
+    applyFlipProgress(pointerToProgress(mouseSwipe.lastX));
+  }
+
+  if (mouseSwipe.released) {
+    completeActiveFlipGesture(mouseSwipe);
+    return;
+  }
+
+  resetMouseSwipe(event.pointerId);
 }
 
-function onPointerMove(event) {
+async function onPointerMove(event) {
+  if (
+    state.mouseSwipe &&
+    event.pointerId === state.mouseSwipe.pointerId &&
+    event.pointerType === 'mouse'
+  ) {
+    state.mouseSwipe.lastX = event.clientX;
+    state.mouseSwipe.lastY = event.clientY;
+    state.mouseSwipe.lastTime = event.timeStamp;
+  }
+
   if (
     state.touchSwipe &&
     event.pointerId === state.touchSwipe.pointerId &&
@@ -1429,6 +1781,10 @@ function onPointerMove(event) {
     state.touchSwipe.lastTime = event.timeStamp;
   }
 
+  if (!state.flip && isTouchLikePointer(event.pointerType)) {
+    await maybeStartTouchFlip(event);
+  }
+
   if (!state.flip || !state.flip.dragging) {
     return;
   }
@@ -1437,10 +1793,78 @@ function onPointerMove(event) {
     return;
   }
 
-  applyFlipProgress(pointerToProgress(event.clientX));
+  state.flip.dragLastX = event.clientX;
+  state.flip.dragLastY = event.clientY;
+  state.flip.dragLastTime = event.timeStamp;
+
+  if (state.flip.usePeel) {
+    applyPeelPointerDrag(event.clientX, event.clientY);
+  } else {
+    applyFlipProgress(pointerToProgress(event.clientX));
+  }
+}
+
+function completeActiveFlipGesture(gesture) {
+  if (!state.flip) {
+    resetTouchSwipe(gesture.pointerId);
+    resetMouseSwipe(gesture.pointerId);
+    return;
+  }
+
+  state.flip.dragging = false;
+  state.flip.dragLastX = gesture.lastX;
+  state.flip.dragLastY = gesture.lastY;
+  state.flip.dragLastTime = gesture.lastTime;
+
+  const touchSwipe = state.touchSwipe;
+  const flickStep = quickFlickStep({
+    startX: gesture.startX,
+    startY: gesture.startY,
+    lastX: gesture.lastX,
+    lastY: gesture.lastY,
+    startTime: gesture.startTime,
+    lastTime: gesture.lastTime,
+    shellRect: state.flip.shellRect
+  });
+  const activeStep = stepForFlip(state.flip);
+  const dragDistance = Math.hypot(
+    gesture.lastX - gesture.startX,
+    gesture.lastY - gesture.startY
+  );
+  const edgeClickCommit =
+    state.flip.startedFromEdgeZone && dragDistance < getTouchSwipeActivationDistance(state.flip.shellRect);
+  const shouldRedirect = flickStep && flickStep !== activeStep;
+  const shouldCommit =
+    !shouldRedirect &&
+    (edgeClickCommit || flickStep === activeStep || state.flip.progress > 0.5 || shouldCommitTouchFlick(touchSwipe, state.flip));
+
+  resetTouchSwipe(gesture.pointerId);
+  resetMouseSwipe(gesture.pointerId);
+
+  if (shouldRedirect) {
+    animateFlipTo(0, {
+      onComplete: () => {
+        triggerStep(flickStep);
+      }
+    });
+    return;
+  }
+
+  animateFlipTo(shouldCommit ? 1 : 0);
 }
 
 function onPointerUp(event) {
+  if (
+    state.mouseSwipe &&
+    event.pointerId === state.mouseSwipe.pointerId &&
+    event.pointerType === 'mouse'
+  ) {
+    state.mouseSwipe.lastX = event.clientX;
+    state.mouseSwipe.lastY = event.clientY;
+    state.mouseSwipe.lastTime = event.timeStamp;
+    state.mouseSwipe.released = true;
+  }
+
   if (
     state.touchSwipe &&
     event.pointerId === state.touchSwipe.pointerId &&
@@ -1452,22 +1876,21 @@ function onPointerUp(event) {
   }
 
   if (!state.flip && state.touchSwipe && event.pointerId === state.touchSwipe.pointerId) {
-    const deltaX = state.touchSwipe.lastX - state.touchSwipe.startX;
-    const enoughDistance = Math.abs(deltaX) >= getTouchSwipeActivationDistance(state.touchSwipe.shellRect);
-    const step = touchSwipeStepFromDelta(deltaX);
-    const quickSwipe = shouldCommitTouchFlick(state.touchSwipe, {
-      visualDirection: step > 0 ? 'forward' : 'backward',
-      shellRect: state.touchSwipe.shellRect
-    });
+    const step = quickFlickStep(state.touchSwipe);
     resetTouchSwipe(event.pointerId);
-    if (step && enoughDistance && quickSwipe) {
+    if (step) {
       triggerStep(step);
     }
     return;
   }
 
+  if (!state.flip && state.mouseSwipe && event.pointerId === state.mouseSwipe.pointerId) {
+    return;
+  }
+
   if (!state.flip || !state.flip.dragging) {
     resetTouchSwipe(event.pointerId);
+    resetMouseSwipe(event.pointerId);
     return;
   }
 
@@ -1475,14 +1898,25 @@ function onPointerUp(event) {
     return;
   }
 
-  state.flip.dragging = false;
-  const shouldCommit = state.flip.progress > 0.5 || shouldCommitTouchFlick(state.touchSwipe, state.flip);
-  resetTouchSwipe(event.pointerId);
-  animateFlipTo(shouldCommit ? 1 : 0);
+  completeActiveFlipGesture({
+    pointerId: event.pointerId,
+    startX: state.flip.dragStartX ?? event.clientX,
+    startY: state.flip.dragStartY ?? event.clientY,
+    lastX: event.clientX,
+    lastY: event.clientY,
+    startTime: state.flip.dragStartTime ?? event.timeStamp,
+    lastTime: event.timeStamp,
+    shellRect: state.flip.shellRect
+  });
 }
 
 function onPointerCancel(event) {
+  if (state.mouseSwipe && event.pointerId === state.mouseSwipe.pointerId) {
+    state.mouseSwipe.cancelled = true;
+  }
+
   resetTouchSwipe(event.pointerId);
+  resetMouseSwipe(event.pointerId);
 
   if (!state.flip || !state.flip.dragging) {
     return;
@@ -1692,6 +2126,7 @@ async function loadBookIntoReader(book, options = {}) {
   resetPeelEffect();
   state.isAnimating = false;
   resetTouchSwipe();
+  resetMouseSwipe();
 
   await renderStaticSpread();
 }
@@ -1702,6 +2137,7 @@ async function showShelfOnly() {
   state.hasOpenedActiveBook = false;
   clearIdleRandomFlipTimers();
   resetTouchSwipe();
+  resetMouseSwipe();
   elements.readerFrame.classList.remove('from-shelf', 'to-shelf');
   elements.readerFrame.style.opacity = '';
   elements.stage.classList.add('hidden');
@@ -1759,6 +2195,7 @@ async function closeActiveBookToShelf(options = {}) {
   stopActiveAnimation();
   clearIdleRandomFlipTimers();
   resetTouchSwipe();
+  resetMouseSwipe();
   state.flip = null;
   resetPeelEffect();
   state.isAnimating = false;
@@ -1851,6 +2288,14 @@ function setupEvents() {
   elements.shell.addEventListener('pointerup', onPointerUp);
   elements.shell.addEventListener('pointercancel', onPointerCancel);
   elements.shell.addEventListener('lostpointercapture', onPointerCancel);
+
+  [elements.edgePrevZone, elements.edgeNextZone].forEach((zone) => {
+    zone.addEventListener('pointerdown', onPointerDown);
+    zone.addEventListener('pointermove', onPointerMove);
+    zone.addEventListener('pointerup', onPointerUp);
+    zone.addEventListener('pointercancel', onPointerCancel);
+    zone.addEventListener('lostpointercapture', onPointerCancel);
+  });
 
   window.addEventListener('pointerdown', markActivity, { passive: true });
   window.addEventListener('pointermove', markActivity, { passive: true });

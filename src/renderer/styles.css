@@ -496,6 +496,10 @@ body {
   transform-origin: center center;
 }
 
+#flip-sheet.peel-mode.top-corner-mode {
+  transform-origin: center center;
+}
+
 #flip-sheet:not(.peel-mode) #flip-bottom {
   display: none;
 }
@@ -518,6 +522,14 @@ body {
 
 #flip-sheet.peel-mode.backward .sheet-face > .page-content {
   transform: scaleX(-1);
+}
+
+#flip-sheet.peel-mode.top-corner-mode .sheet-face > .page-content {
+  transform: scaleY(-1);
+}
+
+#flip-sheet.peel-mode.backward.top-corner-mode .sheet-face > .page-content {
+  transform: scaleX(-1) scaleY(-1);
 }
 
 .pagination-page-shell {
