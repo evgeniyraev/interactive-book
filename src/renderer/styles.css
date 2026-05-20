@@ -242,6 +242,25 @@ body {
   cursor: grabbing;
 }
 
+.peel-svg-clip-element {
+  position: absolute;
+  top: -10000px;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.peel-layer {
+  position: absolute;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  inset: 0;
+  user-select: none;
+  transform-origin: top left;
+}
+
 .reader-menu {
   position: fixed;
   z-index: 32;
@@ -453,6 +472,7 @@ body {
   width: 50%;
   height: 100%;
   transform-style: preserve-3d;
+  overflow: visible;
   pointer-events: none;
   z-index: 12;
 }
@@ -467,6 +487,19 @@ body {
   transform-origin: right center;
 }
 
+#flip-sheet.peel-mode {
+  transform-style: flat;
+}
+
+#flip-sheet.peel-mode.backward {
+  transform: scaleX(-1);
+  transform-origin: center center;
+}
+
+#flip-sheet:not(.peel-mode) #flip-bottom {
+  display: none;
+}
+
 .sheet-face {
   position: absolute;
   inset: 0;
@@ -477,6 +510,14 @@ body {
   background: #fff;
   color: #111827;
   box-shadow: 0 10px 36px rgb(0 0 0 / 36%);
+}
+
+#flip-sheet.peel-mode .sheet-face {
+  box-shadow: none;
+}
+
+#flip-sheet.peel-mode.backward .sheet-face > .page-content {
+  transform: scaleX(-1);
 }
 
 .pagination-page-shell {
@@ -564,6 +605,10 @@ body {
   transform: rotateY(180deg) translateZ(0.1px);
 }
 
+#flip-sheet.peel-mode .sheet-back {
+  transform: none;
+}
+
 #sheet-shadow,
 #sheet-highlight {
   position: absolute;
@@ -580,6 +625,11 @@ body {
 #sheet-highlight {
   background: linear-gradient(100deg, rgb(255 255 255 / 16%), transparent 28%, transparent 72%, rgb(255 255 255 / 12%));
   opacity: 0;
+}
+
+#flip-sheet.peel-mode #sheet-shadow,
+#flip-sheet.peel-mode #sheet-highlight {
+  display: none;
 }
 
 .edge-zone {

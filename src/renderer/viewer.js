@@ -1,4 +1,4 @@
-/* global bookApi */
+/* global bookApi, Peel */
 
 const state = {
   config: null,
@@ -19,6 +19,7 @@ const state = {
   spreads: [],
   spreadIndex: 0,
   flip: null,
+  peelInstance: null,
   holdTimer: null,
   resolvedAssetCache: new Map(),
   animationFrame: null,
@@ -54,6 +55,7 @@ const elements = {
   underLeft: document.getElementById('under-left'),
   underRight: document.getElementById('under-right'),
   flipSheet: document.getElementById('flip-sheet'),
+  flipBottom: document.getElementById('flip-bottom'),
   flipFront: document.getElementById('flip-front'),
   flipBack: document.getElementById('flip-back'),
   sheetShadow: document.getElementById('sheet-shadow'),
@@ -786,6 +788,40 @@ function stopActiveAnimation() {
   }
 }
 
+function clearPeelClipDefinitions() {
+  const defs = document.querySelector('.peel-svg-clip-element defs');
+  if (defs) {
+    defs.replaceChildren();
+  }
+}
+
+function resetPeelLayer(element) {
+  element.classList.remove('peel-layer');
+  element.style.clipPath = '';
+  element.style.webkitClipPath = '';
+  element.style.transform = '';
+  element.style.webkitTransform = '';
+  element.style.boxShadow = '';
+  element.style.webkitBoxShadow = '';
+  element.style.filter = '';
+  element.style.webkitFilter = '';
+  element.style.opacity = '';
+  element.style.backgroundImage = '';
+  element.style.zIndex = '';
+  element.querySelectorAll(
+    '.peel-top-shadow, .peel-back-shadow, .peel-back-reflection, .peel-bottom-shadow'
+  ).forEach((node) => node.remove());
+}
+
+function resetPeelEffect() {
+  state.peelInstance?.removeEvents?.();
+  state.peelInstance = null;
+  clearPeelClipDefinitions();
+
+  elements.flipSheet.classList.remove('peel-ready', 'peel-mode');
+  [elements.flipFront, elements.flipBack, elements.flipBottom].forEach(resetPeelLayer);
+}
+
 function getVisiblePageEdges(spread) {
   const rect = elements.shell.getBoundingClientRect();
   const half = rect.width / 2;
@@ -871,6 +907,7 @@ async function renderStaticSpread() {
   elements.underLeft.classList.add('hidden');
   elements.underRight.classList.add('hidden');
 
+  resetPeelEffect();
   elements.flipSheet.classList.add('hidden');
   elements.flipSheet.classList.remove('forward', 'backward');
   elements.flipSheet.style.transform = '';
@@ -971,6 +1008,72 @@ function computeFlipFromStep(step, current, target) {
   };
 }
 
+function canUsePeelForFlip(flip) {
+  return Boolean(
+    window.Peel?.supported &&
+    flip?.sourceOpenState?.factor > 0.001 &&
+    flip?.targetOpenState?.factor > 0.001 &&
+    !isCoverSlot(flip.frontSlot) &&
+    !isCoverSlot(flip.backSlot)
+  );
+}
+
+function configurePeelPath(peel) {
+  const width = Math.max(1, peel.width);
+  const height = Math.max(1, peel.height);
+
+  peel.setPeelPath(
+    width,
+    height,
+    width * 0.54,
+    height * 0.12,
+    width * -0.34,
+    height * 1.08,
+    width * -0.82,
+    height * 0.88
+  );
+}
+
+function setupPeelForFlip(flip) {
+  resetPeelEffect();
+  elements.flipSheet.classList.add('peel-mode');
+  elements.flipSheet.style.transform = '';
+  elements.flipSheet.getBoundingClientRect();
+
+  const peel = new Peel(elements.flipSheet, {
+    mode: 'book',
+    setPeelOnInit: false,
+    clippingBoxScale: 4.5,
+    topShadowAlpha: 0.34,
+    topShadowBlur: 18,
+    topShadowOffsetX: 0,
+    topShadowOffsetY: 6,
+    backShadowAlpha: 0.18,
+    backShadowSize: 0.08,
+    bottomShadowDarkAlpha: 0.38,
+    bottomShadowLightAlpha: 0.08,
+    'top-element': elements.flipFront,
+    'back-element': elements.flipBack,
+    'bottom-element': elements.flipBottom
+  });
+
+  configurePeelPath(peel);
+  state.peelInstance = peel;
+
+  if (flip.visualDirection === 'backward') {
+    elements.flipSheet.style.transform = 'scaleX(-1)';
+  }
+}
+
+function applyPeelProgress(progress) {
+  const peel = state.peelInstance;
+  if (!peel) {
+    return;
+  }
+
+  peel.setTimeAlongPath(clamp(progress, 0, 1));
+}
+
 async function prepareFlip(step) {
   if (state.view !== 'reader' || state.returningToShelf || state.isAnimating || state.flip) {
     return false;
@@ -988,35 +1091,44 @@ async function prepareFlip(step) {
   }
 
   const flip = computeFlipFromStep(step, current, target);
+  flip.usePeel = canUsePeelForFlip(flip);
+  const underElement = flip.frontSide === 'right' ? elements.underRight : elements.underLeft;
 
   await Promise.all([
     renderSlot(elements.flipFront, flip.frontSlot),
     renderSlot(elements.flipBack, flip.backSlot),
-    renderSlot(flip.frontSide === 'right' ? elements.underRight : elements.underLeft, flip.underSlot)
+    renderSlot(elements.flipBottom, flip.underSlot),
+    renderSlot(underElement, flip.underSlot)
   ]);
 
   await renderBasePages(flip.sourceOpenState);
 
   if (flip.frontSide === 'right') {
     elements.staticRight.classList.add('hidden');
-    elements.underRight.classList.remove('hidden');
+    elements.underRight.classList.toggle('hidden', flip.usePeel);
     elements.underLeft.classList.add('hidden');
   } else {
     elements.staticLeft.classList.add('hidden');
-    elements.underLeft.classList.remove('hidden');
+    elements.underLeft.classList.toggle('hidden', flip.usePeel);
     elements.underRight.classList.add('hidden');
   }
 
-  showElementIfSlot(flip.frontSide === 'right' ? elements.underRight : elements.underLeft, flip.underSlot);
+  if (!flip.usePeel) {
+    showElementIfSlot(underElement, flip.underSlot);
+  }
 
   elements.flipSheet.classList.remove('hidden');
   elements.flipSheet.classList.remove('forward', 'backward');
   elements.flipSheet.classList.add(flip.visualDirection);
+  elements.flipSheet.classList.toggle('peel-mode', flip.usePeel);
   elements.shell.classList.toggle('single-view', isSingleSpread(current));
   elements.edgePrevZone.classList.add('hidden');
   elements.edgeNextZone.classList.add('hidden');
 
   state.flip = flip;
+  if (flip.usePeel) {
+    setupPeelForFlip(flip);
+  }
   applyFlipProgress(0);
   return true;
 }
@@ -1034,9 +1146,14 @@ function applyFlipProgress(progress) {
   const skew = (isForward ? -1 : 1) * bend * 6;
   const lift = bend * 14;
 
-  elements.flipSheet.style.transform = `translateZ(${lift}px) rotateY(${angle}deg) skewY(${skew}deg)`;
+  if (state.flip.usePeel) {
+    applyPeelProgress(state.flip.progress);
+  } else {
+    elements.flipSheet.style.transform = `translateZ(${lift}px) rotateY(${angle}deg) skewY(${skew}deg)`;
+  }
+
   const closedOpenTransition = state.flip.sourceOpenState.factor !== state.flip.targetOpenState.factor;
-  if (closedOpenTransition) {
+  if (closedOpenTransition || state.flip.usePeel) {
     elements.sheetShadow.style.opacity = '0';
     elements.sheetHighlight.style.opacity = '0';
   } else {
@@ -1572,6 +1689,7 @@ async function loadBookIntoReader(book, options = {}) {
   const requestedSpread = typeof options.spreadIndex === 'number' ? options.spreadIndex : defaultSpread;
   state.spreadIndex = clamp(requestedSpread, 0, maxSpread);
   state.flip = null;
+  resetPeelEffect();
   state.isAnimating = false;
   resetTouchSwipe();
 
@@ -1642,6 +1760,7 @@ async function closeActiveBookToShelf(options = {}) {
   clearIdleRandomFlipTimers();
   resetTouchSwipe();
   state.flip = null;
+  resetPeelEffect();
   state.isAnimating = false;
   elements.edgePrevZone.classList.add('hidden');
   elements.edgeNextZone.classList.add('hidden');
