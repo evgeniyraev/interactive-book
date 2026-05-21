@@ -368,7 +368,7 @@ class AdminServer {
     });
 
     await new Promise((resolve, reject) => {
-      const server = application.listen(port, '127.0.0.1', () => {
+      const server = application.listen(port, '0.0.0.0', () => {
         this.server = server;
         this.port = port;
         this.onStateChanged({ running: true, url: this.getUrl(), port: this.port });
