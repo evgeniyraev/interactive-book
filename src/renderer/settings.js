@@ -12,9 +12,7 @@ const els = {
   edgeZoneWidth: document.getElementById('edgeZoneWidth'),
   innerPagePadding: document.getElementById('innerPagePadding'),
   innerPagePaddingY: document.getElementById('innerPagePaddingY'),
-  sideViewTexture: document.getElementById('sideViewTexture'),
   sideViewMaxWidth: document.getElementById('sideViewMaxWidth'),
-  sideViewColor: document.getElementById('sideViewColor'),
   sideViewOpacity: document.getElementById('sideViewOpacity'),
   turnAnimationMs: document.getElementById('turnAnimationMs'),
   idleRandomFlipEnabled: document.getElementById('idleRandomFlipEnabled'),
@@ -51,9 +49,7 @@ function readPrimitiveInputs() {
   state.config.design.edgeZoneWidth = Number(els.edgeZoneWidth.value || 92);
   state.config.design.innerPagePadding = Number(els.innerPagePadding.value || 24);
   state.config.design.innerPagePaddingY = Number(els.innerPagePaddingY.value || 24);
-  state.config.design.sideViewTexture = els.sideViewTexture.value.trim();
   state.config.design.sideViewMaxWidth = Number(els.sideViewMaxWidth.value || 68);
-  state.config.design.sideViewColor = els.sideViewColor.value || '#c8b79b';
   state.config.design.sideViewOpacity = Number(els.sideViewOpacity.value || 1);
   state.config.design.turnAnimationMs = Number(els.turnAnimationMs.value || 700);
   state.config.design.idleRandomFlipEnabled = Boolean(els.idleRandomFlipEnabled.checked);
@@ -81,9 +77,7 @@ function writePrimitiveInputs() {
   els.edgeZoneWidth.value = String(state.config.design.edgeZoneWidth ?? 92);
   els.innerPagePadding.value = String(state.config.design.innerPagePadding ?? 24);
   els.innerPagePaddingY.value = String(state.config.design.innerPagePaddingY ?? 24);
-  els.sideViewTexture.value = state.config.design.sideViewTexture || '';
   els.sideViewMaxWidth.value = String(state.config.design.sideViewMaxWidth ?? 68);
-  els.sideViewColor.value = state.config.design.sideViewColor || '#c8b79b';
   els.sideViewOpacity.value = String(state.config.design.sideViewOpacity ?? 1);
   els.turnAnimationMs.value = String(state.config.design.turnAnimationMs ?? 700);
   els.idleRandomFlipEnabled.checked = Boolean(state.config.design.idleRandomFlipEnabled);
@@ -140,10 +134,6 @@ async function pickAssetAndAssign(kind) {
     els.displacementMap.value = result.relativePath;
   }
 
-  if (kind === 'side-view-texture') {
-    state.config.design.sideViewTexture = result.relativePath;
-    els.sideViewTexture.value = result.relativePath;
-  }
 }
 
 function bindEvents() {

@@ -158,11 +158,19 @@ function deriveBookTitle(content = {}, index = 0) {
 function createBook(options = {}) {
   const content = normalizeContent(options.content || {});
   const title = String(options.title || deriveBookTitle(content, 0)).trim();
+  const sideViewColor = Object.prototype.hasOwnProperty.call(options, 'sideViewColor')
+    ? String(options.sideViewColor || '')
+    : '#c8b79b';
+  const sideViewOpacity = Object.prototype.hasOwnProperty.call(options, 'sideViewOpacity')
+    ? String(options.sideViewOpacity ?? '')
+    : '1';
 
   return {
     id: options.id || createId(),
     title: title || 'Book 1',
     description: String(options.description || ''),
+    sideViewColor,
+    sideViewOpacity,
     content
   };
 }
@@ -171,11 +179,19 @@ function normalizeBook(rawBook = {}, index = 0) {
   const source = rawBook && typeof rawBook === 'object' ? rawBook : {};
   const content = normalizeContent(source.content || source);
   const title = String(source.title || deriveBookTitle(content, index)).trim();
+  const sideViewColor = Object.prototype.hasOwnProperty.call(source, 'sideViewColor')
+    ? String(source.sideViewColor || '')
+    : '#c8b79b';
+  const sideViewOpacity = Object.prototype.hasOwnProperty.call(source, 'sideViewOpacity')
+    ? String(source.sideViewOpacity ?? '')
+    : '1';
 
   return {
     id: String(source.id || createId()),
     title: title || `Book ${index + 1}`,
     description: String(source.description || ''),
+    sideViewColor,
+    sideViewOpacity,
     content
   };
 }

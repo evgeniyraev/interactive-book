@@ -157,6 +157,8 @@ function getBooksFromConfig(config) {
     id: String(book?.id || `book-${index + 1}`),
     title: displayTitleForBook(book, index),
     description: String(book?.description || ''),
+    sideViewColor: normalizeHexColor(book?.sideViewColor || config?.design?.sideViewColor, '#c8b79b'),
+    sideViewOpacity: String(book?.sideViewOpacity ?? ''),
     content: contentForBook(book)
   }));
 }
@@ -238,11 +240,11 @@ function getSideViewMaxWidth() {
 }
 
 function getSideViewColor() {
-  return normalizeHexColor(state.config?.design?.sideViewColor, '#c8b79b');
+  return normalizeHexColor(state.activeBook?.sideViewColor || state.config?.design?.sideViewColor, '#c8b79b');
 }
 
 function getSideViewOpacity() {
-  const value = Number(state.config?.design?.sideViewOpacity);
+  const value = Number(state.activeBook?.sideViewOpacity || state.config?.design?.sideViewOpacity);
   return clamp(Number.isFinite(value) ? value : 1, 0, 1);
 }
 
@@ -993,12 +995,13 @@ async function applyDesign() {
   const { design } = state.config;
   const backgroundUrl = await resolveAssetUrl(design.backgroundImage);
   const mapUrl = await resolveAssetUrl(design.displacementMap);
-  const sideTextureUrl = await resolveAssetUrl(design.sideViewTexture || '');
   const sideViewColor = getSideViewColor();
   const sideViewOpacity = getSideViewOpacity();
   const appBackgroundColor = design.appBackgroundColor || '#101319';
   const defaultBackgroundUrl = new URL('./assets/Background.png', window.location.href).toString();
   const resolvedBackgroundUrl = backgroundUrl || defaultBackgroundUrl;
+  const sideLeftTextureUrl = new URL('./assets/side-left.png', window.location.href).toString();
+  const sideRightTextureUrl = new URL('./assets/side-right.png', window.location.href).toString();
 
   document.body.style.backgroundColor = appBackgroundColor;
   elements.backgroundLayer.style.backgroundColor = appBackgroundColor;
@@ -1010,13 +1013,16 @@ async function applyDesign() {
   elements.shell.style.width = `${pageWidth * 2}px`;
   elements.shell.style.height = `${pageHeight}px`;
 
-  const stackTexture = sideTextureUrl ? `url("${sideTextureUrl}")` : 'none';
-  elements.sideLeftStack.style.backgroundImage = stackTexture;
-  elements.sideRightStack.style.backgroundImage = stackTexture;
+  elements.sideLeftStack.style.backgroundImage = `url("${sideLeftTextureUrl}")`;
+  elements.sideRightStack.style.backgroundImage = `url("${sideRightTextureUrl}")`;
   elements.sideLeftStack.style.backgroundColor = sideViewColor;
   elements.sideRightStack.style.backgroundColor = sideViewColor;
-  elements.sideLeftStack.style.opacity = String(sideViewOpacity);
-  elements.sideRightStack.style.opacity = String(sideViewOpacity);
+  elements.sideLeftStack.style.setProperty('--side-texture-tint', sideViewColor);
+  elements.sideRightStack.style.setProperty('--side-texture-tint', sideViewColor);
+  elements.sideLeftStack.style.setProperty('--side-texture-tint-opacity', String(sideViewOpacity));
+  elements.sideRightStack.style.setProperty('--side-texture-tint-opacity', String(sideViewOpacity));
+  elements.sideLeftStack.style.opacity = '1';
+  elements.sideRightStack.style.opacity = '1';
 
   const displacementScale = mapUrl ? 18 : 0;
   elements.stage.style.filter = mapUrl ? 'url(#book-displacement-filter)' : 'none';
@@ -2194,6 +2200,7 @@ async function loadBookIntoReader(book, options = {}) {
   resetTouchSwipe();
   resetMouseSwipe();
 
+  await applyDesign();
   await renderStaticSpread();
 }
 
