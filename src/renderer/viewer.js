@@ -46,8 +46,6 @@ const elements = {
   stage: document.getElementById('book-stage'),
   readerFrame: document.getElementById('reader-frame'),
   shell: document.getElementById('book-shell'),
-  readerMenu: document.getElementById('reader-menu'),
-  shelfButton: document.getElementById('shelf-button'),
   sideLeftStack: document.getElementById('side-left-stack'),
   sideRightStack: document.getElementById('side-right-stack'),
   baseLeft: document.getElementById('base-left'),
@@ -121,6 +119,26 @@ function displayTitleForBook(book, index = 0) {
 
   const coverText = htmlToPlainText(frontCover.html || '').slice(0, 80).trim();
   return coverText || `Book ${index + 1}`;
+}
+
+function displayDescriptionForBook(book) {
+  const explicit = String(book?.description || '').trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const content = contentForBook(book);
+  const pdfPageCount = Number(content.pdfSource?.pageCount || 0);
+  if (hasPdfSource(content) && pdfPageCount > 0) {
+    return pdfPageCount === 1 ? '1 page' : `${pdfPageCount} pages`;
+  }
+
+  const pageCount = Array.isArray(content.pages) ? content.pages.length : 0;
+  if (pageCount > 0) {
+    return pageCount === 1 ? '1 page' : `${pageCount} pages`;
+  }
+
+  return '';
 }
 
 function getBooksFromConfig(config) {
@@ -979,10 +997,12 @@ async function applyDesign() {
   const sideViewColor = getSideViewColor();
   const sideViewOpacity = getSideViewOpacity();
   const appBackgroundColor = design.appBackgroundColor || '#101319';
+  const defaultBackgroundUrl = new URL('./assets/Background.png', window.location.href).toString();
+  const resolvedBackgroundUrl = backgroundUrl || defaultBackgroundUrl;
 
   document.body.style.backgroundColor = appBackgroundColor;
   elements.backgroundLayer.style.backgroundColor = appBackgroundColor;
-  elements.backgroundLayer.style.backgroundImage = backgroundUrl ? `url("${backgroundUrl}")` : 'none';
+  elements.backgroundLayer.style.backgroundImage = `url("${resolvedBackgroundUrl}")`;
 
   const pageWidth = getPageWidth();
   const pageHeight = getPageHeight();
@@ -1436,11 +1456,6 @@ async function finishFlip(commit) {
   state.isAnimating = false;
   await renderStaticSpread();
 
-  if (commit && state.view === 'reader' && state.hasOpenedActiveBook && state.spreadIndex === 0) {
-    window.setTimeout(() => {
-      closeActiveBookToShelf({ renderCover: false });
-    }, 180);
-  }
 }
 
 function animateDraggedPeelTo(targetProgress, options = {}) {
@@ -2024,7 +2039,7 @@ function shelfBookElement(bookId) {
 function getShelfMotionForBook(bookId) {
   const target = shelfBookElement(bookId);
   const shellRect = elements.shell.getBoundingClientRect();
-  const targetRect = target?.querySelector('.shelf-book-cover')?.getBoundingClientRect();
+  const targetRect = target?.getBoundingClientRect();
 
   if (!targetRect || shellRect.width <= 0 || shellRect.height <= 0) {
     return {
@@ -2093,29 +2108,12 @@ function nextFrame() {
 }
 
 async function buildShelfBookMarkup(book, index) {
-  const content = contentForBook(book);
   const title = displayTitleForBook(book, index);
-  const cover = normalizeBookPage(content.frontCover, title);
-  let coverMarkup = `<div class="rich-content-root">${cover.html || `<p>${escapeHtml(title)}</p>`}</div>`;
-
-  if (hasPdfSource(content)) {
-    const previewSrc = await renderPdfShelfPreview(content.pdfSource);
-    coverMarkup = previewSrc
-      ? `<img class="shelf-pdf-preview" alt="${escapeHtml(title)} first page" src="${previewSrc}" draggable="false" />`
-      : `<div class="shelf-pdf-cover"><span>PDF</span><strong>${escapeHtml(title)}</strong></div>`;
-  } else if (cover.type === 'image' && cover.imagePath) {
-    const src = await resolveAssetUrl(cover.imagePath);
-    coverMarkup = `<img alt="${escapeHtml(title)} cover" src="${src}" draggable="false" />`;
-  }
-
-  const pageCount = Array.isArray(content.pages) ? content.pages.length : 0;
-  const meta = hasPdfSource(content) ? '' : (pageCount === 1 ? '1 page' : `${pageCount} pages`);
-  const metaMarkup = meta ? `<div class="shelf-book-meta">${escapeHtml(meta)}</div>` : '';
+  const description = displayDescriptionForBook(book);
 
   return `
-    <div class="shelf-book-cover">${coverMarkup}</div>
-    <div class="shelf-book-title">${escapeHtml(title)}</div>
-    ${metaMarkup}
+    <span class="shelf-book-title">${escapeHtml(title)}</span>
+    <span class="shelf-book-description">${description ? escapeHtml(description) : '&nbsp;'}</span>
   `;
 }
 
@@ -2136,6 +2134,10 @@ async function renderShelf() {
     button.className = 'shelf-book';
     button.dataset.bookId = book.id;
     button.setAttribute('aria-label', `Open ${displayTitleForBook(book, index)}`);
+    button.classList.toggle('active', book.id === state.activeBookId);
+    if (book.id === state.activeBookId) {
+      button.setAttribute('aria-current', 'true');
+    }
     button.innerHTML = await buildShelfBookMarkup(book, index);
     button.addEventListener('click', () => {
       openBookFromShelf(book.id);
@@ -2205,7 +2207,6 @@ async function showShelfOnly() {
   elements.readerFrame.classList.remove('from-shelf', 'to-shelf');
   elements.readerFrame.style.opacity = '';
   elements.stage.classList.add('hidden');
-  elements.readerMenu.classList.add('hidden');
   elements.shelfView.classList.remove('hidden');
   await renderShelf();
   positionEdgeZones();
@@ -2227,25 +2228,13 @@ async function openBookFromShelf(bookId) {
   state.returningToShelf = false;
   state.hasOpenedActiveBook = false;
   elements.readerFrame.classList.remove('from-shelf', 'to-shelf');
-  elements.readerFrame.style.opacity = '0';
+  elements.readerFrame.style.opacity = '';
   elements.stage.classList.remove('hidden');
-  elements.readerMenu.classList.remove('hidden');
+  elements.shelfView.classList.remove('hidden');
 
   await loadBookIntoReader(book);
   state.hasOpenedActiveBook = state.sourceMode !== 'pdf' && state.spreadIndex > 0;
-  elements.edgePrevZone.classList.add('hidden');
-  elements.edgeNextZone.classList.add('hidden');
-
-  const motion = getShelfMotionForBook(book.id);
-  setReaderFrameMotion(motion);
-  elements.readerFrame.classList.add('from-shelf');
-  elements.readerFrame.style.opacity = '';
-  elements.readerFrame.getBoundingClientRect();
-
-  await nextFrame();
-  elements.readerFrame.classList.remove('from-shelf');
-  await waitForReaderFrameTransition();
-  elements.shelfView.classList.add('hidden');
+  await renderShelf();
   positionEdgeZones();
   noteUserActivity(true);
 }
@@ -2266,7 +2255,6 @@ async function closeActiveBookToShelf(options = {}) {
   state.isAnimating = false;
   elements.edgePrevZone.classList.add('hidden');
   elements.edgeNextZone.classList.add('hidden');
-  elements.readerMenu.classList.add('hidden');
 
   if (options.renderCover !== false) {
     if (state.sourceMode !== 'pdf') {
@@ -2312,13 +2300,28 @@ async function reloadFromConfig() {
     if (book) {
       state.view = 'reader';
       elements.stage.classList.remove('hidden');
-      elements.readerMenu.classList.remove('hidden');
-      elements.shelfView.classList.add('hidden');
+      elements.shelfView.classList.remove('hidden');
       await loadBookIntoReader(book, { spreadIndex: previousSpreadIndex });
       state.hasOpenedActiveBook = state.sourceMode !== 'pdf' && state.spreadIndex > 0;
+      await renderShelf();
       noteUserActivity(true);
       return;
     }
+  }
+
+  const book = getBookById(state.activeBookId) || state.books[0];
+  if (book) {
+    state.view = 'reader';
+    state.returningToShelf = false;
+    elements.readerFrame.classList.remove('from-shelf', 'to-shelf');
+    elements.readerFrame.style.opacity = '';
+    elements.stage.classList.remove('hidden');
+    elements.shelfView.classList.remove('hidden');
+    await loadBookIntoReader(book);
+    state.hasOpenedActiveBook = state.sourceMode !== 'pdf' && state.spreadIndex > 0;
+    await renderShelf();
+    noteUserActivity(true);
+    return;
   }
 
   await showShelfOnly();
@@ -2342,10 +2345,6 @@ function setupEvents() {
 
   elements.edgePrevZone.addEventListener('click', () => {
     triggerStep(-1);
-  });
-
-  elements.shelfButton.addEventListener('click', () => {
-    closeActiveBookToShelf();
   });
 
   elements.shell.addEventListener('pointerdown', onPointerDown);
@@ -2372,10 +2371,6 @@ function setupEvents() {
 
     if (state.view !== 'reader') {
       return;
-    }
-
-    if (event.key === 'Escape') {
-      closeActiveBookToShelf();
     }
 
     if (event.key === 'ArrowRight') {
