@@ -1,4 +1,4 @@
-/* global bookApi, Peel */
+/* global bookApi, Peel, WebGLPageTurn */
 
 const state = {
   config: null,
@@ -20,6 +20,7 @@ const state = {
   spreadIndex: 0,
   flip: null,
   peelInstance: null,
+  webglTurner: null,
   holdTimer: null,
   resolvedAssetCache: new Map(),
   animationFrame: null,
@@ -823,6 +824,51 @@ function resetPeelEffect() {
   [elements.flipFront, elements.flipBack, elements.flipBottom].forEach(resetPeelLayer);
 }
 
+function ensureWebGLTurner() {
+  if (!window.WebGLPageTurn?.isSupported?.()) {
+    return null;
+  }
+
+  if (state.webglTurner) {
+    return state.webglTurner;
+  }
+
+  try {
+    state.webglTurner = new WebGLPageTurn(elements.shell);
+    return state.webglTurner;
+  } catch (error) {
+    console.warn('WebGL page turn renderer is unavailable:', error);
+    state.webglTurner = null;
+    return null;
+  }
+}
+
+function resetWebGLTurnEffect() {
+  state.webglTurner?.stop?.();
+  elements.flipSheet.style.visibility = '';
+}
+
+async function setupWebGLForFlip(flip) {
+  const turner = ensureWebGLTurner();
+  if (!turner) {
+    return false;
+  }
+
+  try {
+    await turner.start({
+      frontElement: elements.flipFront,
+      backElement: elements.flipBack,
+      direction: flip.visualDirection
+    });
+    elements.flipSheet.style.visibility = 'hidden';
+    return true;
+  } catch (error) {
+    console.warn('Could not prepare WebGL page turn. Falling back to DOM renderer:', error);
+    resetWebGLTurnEffect();
+    return false;
+  }
+}
+
 function getVisiblePageEdges(spread) {
   const rect = elements.shell.getBoundingClientRect();
   const half = rect.width / 2;
@@ -908,10 +954,12 @@ async function renderStaticSpread() {
   elements.underLeft.classList.add('hidden');
   elements.underRight.classList.add('hidden');
 
+  resetWebGLTurnEffect();
   resetPeelEffect();
   elements.flipSheet.classList.add('hidden');
   elements.flipSheet.classList.remove('forward', 'backward');
   elements.flipSheet.style.transform = '';
+  elements.flipSheet.style.visibility = '';
   elements.sheetShadow.style.opacity = '0';
   elements.sheetHighlight.style.opacity = '0';
 
@@ -1223,7 +1271,8 @@ async function prepareFlip(step) {
   }
 
   const flip = computeFlipFromStep(step, current, target);
-  flip.usePeel = canUsePeelForFlip(flip);
+  flip.useWebGL = false;
+  flip.usePeel = false;
   const underElement = flip.frontSide === 'right' ? elements.underRight : elements.underLeft;
 
   await Promise.all([
@@ -1234,6 +1283,30 @@ async function prepareFlip(step) {
   ]);
 
   await renderBasePages(flip.sourceOpenState);
+
+  elements.flipSheet.classList.remove('hidden');
+  elements.flipSheet.classList.remove('forward', 'backward');
+  elements.flipSheet.classList.add(flip.visualDirection);
+  elements.flipSheet.classList.remove('peel-mode', 'top-corner-mode');
+  elements.flipSheet.style.visibility = 'hidden';
+  elements.shell.classList.toggle('single-view', isSingleSpread(current));
+  elements.edgePrevZone.classList.add('hidden');
+  elements.edgeNextZone.classList.add('hidden');
+
+  state.flip = flip;
+
+  flip.useWebGL = await setupWebGLForFlip(flip);
+  flip.usePeel = !flip.useWebGL && canUsePeelForFlip(flip);
+
+  if (!flip.useWebGL) {
+    elements.flipSheet.style.visibility = '';
+  }
+
+  elements.flipSheet.classList.toggle('peel-mode', flip.usePeel);
+
+  if (flip.usePeel) {
+    setupPeelForFlip(flip);
+  }
 
   if (flip.frontSide === 'right') {
     elements.staticRight.classList.add('hidden');
@@ -1249,18 +1322,6 @@ async function prepareFlip(step) {
     showElementIfSlot(underElement, flip.underSlot);
   }
 
-  elements.flipSheet.classList.remove('hidden');
-  elements.flipSheet.classList.remove('forward', 'backward');
-  elements.flipSheet.classList.add(flip.visualDirection);
-  elements.flipSheet.classList.toggle('peel-mode', flip.usePeel);
-  elements.shell.classList.toggle('single-view', isSingleSpread(current));
-  elements.edgePrevZone.classList.add('hidden');
-  elements.edgeNextZone.classList.add('hidden');
-
-  state.flip = flip;
-  if (flip.usePeel) {
-    setupPeelForFlip(flip);
-  }
   applyFlipProgress(0);
   return true;
 }
@@ -1278,7 +1339,9 @@ function applyFlipProgress(progress, options = {}) {
   const skew = (isForward ? -1 : 1) * bend * 6;
   const lift = bend * 14;
 
-  if (state.flip.usePeel) {
+  if (state.flip.useWebGL) {
+    state.webglTurner?.render?.(state.flip.progress);
+  } else if (state.flip.usePeel) {
     if (!options.skipPeelPath) {
       applyPeelProgress(state.flip.progress);
     }
@@ -1287,7 +1350,7 @@ function applyFlipProgress(progress, options = {}) {
   }
 
   const closedOpenTransition = state.flip.sourceOpenState.factor !== state.flip.targetOpenState.factor;
-  if (closedOpenTransition || state.flip.usePeel) {
+  if (closedOpenTransition || state.flip.usePeel || state.flip.useWebGL) {
     elements.sheetShadow.style.opacity = '0';
     elements.sheetHighlight.style.opacity = '0';
   } else {
@@ -2123,6 +2186,7 @@ async function loadBookIntoReader(book, options = {}) {
   const requestedSpread = typeof options.spreadIndex === 'number' ? options.spreadIndex : defaultSpread;
   state.spreadIndex = clamp(requestedSpread, 0, maxSpread);
   state.flip = null;
+  resetWebGLTurnEffect();
   resetPeelEffect();
   state.isAnimating = false;
   resetTouchSwipe();
@@ -2197,6 +2261,7 @@ async function closeActiveBookToShelf(options = {}) {
   resetTouchSwipe();
   resetMouseSwipe();
   state.flip = null;
+  resetWebGLTurnEffect();
   resetPeelEffect();
   state.isAnimating = false;
   elements.edgePrevZone.classList.add('hidden');
