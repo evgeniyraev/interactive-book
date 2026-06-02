@@ -35,6 +35,12 @@ const els = {
   bookList: document.getElementById('bookList'),
   bookTitleInput: document.getElementById('bookTitleInput'),
   bookDescriptionInput: document.getElementById('bookDescriptionInput'),
+  bookSideViewColorInput: document.getElementById('bookSideViewColorInput'),
+  bookSideViewColorCodeInput: document.getElementById('bookSideViewColorCodeInput'),
+  bookSideViewColorSwatch: document.getElementById('bookSideViewColorSwatch'),
+  bookSideViewColorValue: document.getElementById('bookSideViewColorValue'),
+  bookSideViewOpacityInput: document.getElementById('bookSideViewOpacityInput'),
+  clearBookSideViewTintButton: document.getElementById('clearBookSideViewTintButton'),
   addBookButton: document.getElementById('addBookButton'),
   moveBookUpButton: document.getElementById('moveBookUpButton'),
   moveBookDownButton: document.getElementById('moveBookDownButton'),
@@ -174,6 +180,8 @@ function createBook(options = {}) {
     id: crypto.randomUUID(),
     title,
     description: String(options.description || ''),
+    sideViewColor: String(options.sideViewColor || '#c8b79b'),
+    sideViewOpacity: String(options.sideViewOpacity ?? '1'),
     content: options.content || createDefaultContent(title)
   };
 }
@@ -199,6 +207,79 @@ function persistBookMetaState() {
 
   book.title = els.bookTitleInput.value;
   book.description = els.bookDescriptionInput.value;
+}
+
+function normalizeColorCode(value) {
+  const input = String(value || '').trim();
+  const prefixed = input.startsWith('#') ? input : `#${input}`;
+  const match = prefixed.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (!match) {
+    return '';
+  }
+
+  const hex = match[1].toLowerCase();
+  if (hex.length === 3) {
+    return `#${hex.split('').map((part) => part + part).join('')}`;
+  }
+
+  return `#${hex}`;
+}
+
+function normalizeHexColor(value, fallback = '#c8b79b') {
+  return normalizeColorCode(value) || fallback;
+}
+
+function normalizedOpacity(value, fallback = '1') {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+
+  return String(Math.min(1, Math.max(0, numeric)));
+}
+
+function updateBookTintSummary(book = currentBook()) {
+  const color = normalizeHexColor(book?.sideViewColor, '#c8b79b');
+  const hasCustomColor = Boolean(book?.sideViewColor);
+  const opacity = normalizedOpacity(book?.sideViewOpacity, '1');
+  const hasCustomOpacity = Boolean(book?.sideViewOpacity);
+
+  els.bookSideViewColorSwatch.style.background = color;
+  els.bookSideViewColorSwatch.style.opacity = opacity;
+  els.bookSideViewColorValue.textContent = hasCustomColor || hasCustomOpacity
+    ? `${hasCustomColor ? color : 'Default color'} · ${Math.round(Number(opacity) * 100)}%`
+    : 'Default';
+}
+
+function persistBookTintState() {
+  const book = currentBook();
+  if (!book) {
+    return;
+  }
+
+  const color = normalizeColorCode(els.bookSideViewColorCodeInput.value || els.bookSideViewColorInput.value);
+  if (!color) {
+    els.bookSideViewColorCodeInput.setCustomValidity('Use a hex color like #c8b79b.');
+    return;
+  }
+
+  els.bookSideViewColorCodeInput.setCustomValidity('');
+  book.sideViewColor = color;
+  book.sideViewOpacity = normalizedOpacity(els.bookSideViewOpacityInput.value, '1');
+  els.bookSideViewColorInput.value = color;
+  els.bookSideViewColorCodeInput.value = color;
+  updateBookTintSummary(book);
+}
+
+function clearBookTintState() {
+  const book = currentBook();
+  if (!book) {
+    return;
+  }
+
+  book.sideViewColor = '';
+  book.sideViewOpacity = '';
+  renderBookDetails();
 }
 
 function selectionIndex() {
@@ -376,6 +457,12 @@ function renderBookDetails() {
 
   els.bookTitleInput.value = book?.title || '';
   els.bookDescriptionInput.value = book?.description || '';
+  const sideViewColor = normalizeHexColor(book?.sideViewColor, '#c8b79b');
+  els.bookSideViewColorInput.value = sideViewColor;
+  els.bookSideViewColorCodeInput.value = sideViewColor;
+  els.bookSideViewColorCodeInput.setCustomValidity('');
+  els.bookSideViewOpacityInput.value = normalizedOpacity(book?.sideViewOpacity, '1');
+  updateBookTintSummary(book);
   els.moveBookUpButton.disabled = index <= 0;
   els.moveBookDownButton.disabled = index < 0 || index >= state.books.length - 1;
   els.removeBookButton.disabled = state.books.length <= 1 || index < 0;
@@ -1415,6 +1502,35 @@ function bindEvents() {
 
   els.bookDescriptionInput.addEventListener('input', () => {
     persistBookMetaState();
+  });
+
+  els.bookSideViewColorInput.addEventListener('input', () => {
+    els.bookSideViewColorCodeInput.value = els.bookSideViewColorInput.value;
+    persistBookTintState();
+  });
+
+  els.bookSideViewColorCodeInput.addEventListener('input', () => {
+    const color = normalizeColorCode(els.bookSideViewColorCodeInput.value);
+    els.bookSideViewColorCodeInput.setCustomValidity(color ? '' : 'Use a hex color like #c8b79b.');
+    if (color) {
+      persistBookTintState();
+    }
+  });
+
+  els.bookSideViewColorCodeInput.addEventListener('blur', () => {
+    const book = currentBook();
+    const color = normalizeHexColor(book?.sideViewColor, '#c8b79b');
+    els.bookSideViewColorInput.value = color;
+    els.bookSideViewColorCodeInput.value = color;
+    els.bookSideViewColorCodeInput.setCustomValidity('');
+  });
+
+  els.bookSideViewOpacityInput.addEventListener('input', () => {
+    persistBookTintState();
+  });
+
+  els.clearBookSideViewTintButton.addEventListener('click', () => {
+    clearBookTintState();
   });
 
   els.itemTitleInput.addEventListener('input', () => {

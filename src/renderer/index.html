@@ -18,18 +18,12 @@
       </filter>
     </svg>
 
-    <section id="shelf-view" class="shelf-view" aria-label="Book shelf">
+    <section id="shelf-view" class="shelf-view" aria-label="Available books">
       <div class="shelf-inner">
-        <div class="shelf-header">
-          <h1>Library</h1>
-        </div>
+        <h1 class="sr-only">Available books</h1>
         <div id="shelf-grid" class="shelf-grid"></div>
       </div>
     </section>
-
-    <nav id="reader-menu" class="reader-menu hidden" aria-label="Reader menu">
-      <button id="shelf-button" type="button">Shelf</button>
-    </nav>
 
     <main id="book-stage" class="hidden" role="main">
       <div id="reader-frame">
@@ -47,9 +41,10 @@
           <article id="under-left" class="page page-left hidden"></article>
           <article id="under-right" class="page page-right hidden"></article>
 
-          <div id="flip-sheet" class="hidden" aria-hidden="true">
-            <article id="flip-front" class="sheet-face"></article>
-            <article id="flip-back" class="sheet-face sheet-back"></article>
+          <div id="flip-sheet" class="peel hidden" aria-hidden="true">
+            <article id="flip-bottom" class="sheet-face peel-bottom"></article>
+            <article id="flip-front" class="sheet-face peel-top"></article>
+            <article id="flip-back" class="sheet-face sheet-back peel-back"></article>
             <div id="sheet-shadow"></div>
             <div id="sheet-highlight"></div>
           </div>
@@ -62,6 +57,8 @@
 
     <div id="touch-settings-zone" aria-hidden="true"></div>
     <script src="./richContentRuntime.js"></script>
+    <script src="./webglPageTurn.js"></script>
+    <script src="./peel.js"></script>
     <script src="./viewer.js"></script>
   </body>
 </html>

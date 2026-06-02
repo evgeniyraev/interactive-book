@@ -26,7 +26,6 @@ const defaultConfig = {
     edgeZoneWidth: 92,
     innerPagePadding: 24,
     innerPagePaddingY: 24,
-    sideViewTexture: '',
     sideViewMaxWidth: 68,
     sideViewColor: '#c8b79b',
     sideViewOpacity: 1,

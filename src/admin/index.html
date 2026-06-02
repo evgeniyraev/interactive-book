@@ -99,6 +99,21 @@
                   Shelf description
                   <input id="bookDescriptionInput" />
                 </label>
+
+                <div class="book-tint-control">
+                  <span>Side texture tint</span>
+                  <div class="tint-row">
+                    <input id="bookSideViewColorInput" type="color" />
+                    <input id="bookSideViewColorCodeInput" class="tint-code-input" type="text" spellcheck="false" placeholder="#c8b79b" />
+                    <span id="bookSideViewColorSwatch" class="tint-swatch" aria-hidden="true"></span>
+                    <span id="bookSideViewColorValue" class="tint-value"></span>
+                  </div>
+                  <label>
+                    Opacity
+                    <input id="bookSideViewOpacityInput" type="number" min="0" max="1" step="0.05" />
+                  </label>
+                  <button id="clearBookSideViewTintButton" type="button" class="secondary">Clear tint</button>
+                </div>
               </div>
 
               <section class="pdf-import-panel" aria-labelledby="pdfImportTitle">

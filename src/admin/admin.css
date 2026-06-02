@@ -245,6 +245,43 @@ label {
   gap: 0.8rem;
 }
 
+.book-tint-control {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.book-tint-control > span {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #253958;
+}
+
+.tint-row {
+  display: grid;
+  grid-template-columns: auto minmax(7rem, 9rem) 2rem minmax(7rem, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.tint-code-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  text-transform: lowercase;
+}
+
+.tint-swatch {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid #c7d2e6;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 55%);
+}
+
+.tint-value {
+  color: #51627f;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
 .pdf-import-panel {
   display: grid;
   grid-template-columns: minmax(280px, 0.82fr) minmax(320px, 1.18fr);

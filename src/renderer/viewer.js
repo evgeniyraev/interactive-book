@@ -1,4 +1,4 @@
-/* global bookApi */
+/* global bookApi, Peel, WebGLPageTurn */
 
 const state = {
   config: null,
@@ -19,6 +19,8 @@ const state = {
   spreads: [],
   spreadIndex: 0,
   flip: null,
+  peelInstance: null,
+  webglTurner: null,
   holdTimer: null,
   resolvedAssetCache: new Map(),
   animationFrame: null,
@@ -28,6 +30,7 @@ const state = {
   idleToken: 0,
   lastActivityAt: 0,
   touchSwipe: null,
+  mouseSwipe: null,
   pdfModulePromise: null,
   shelfPdfPreviewCache: new Map(),
   pdf: {
@@ -43,8 +46,6 @@ const elements = {
   stage: document.getElementById('book-stage'),
   readerFrame: document.getElementById('reader-frame'),
   shell: document.getElementById('book-shell'),
-  readerMenu: document.getElementById('reader-menu'),
-  shelfButton: document.getElementById('shelf-button'),
   sideLeftStack: document.getElementById('side-left-stack'),
   sideRightStack: document.getElementById('side-right-stack'),
   baseLeft: document.getElementById('base-left'),
@@ -54,6 +55,7 @@ const elements = {
   underLeft: document.getElementById('under-left'),
   underRight: document.getElementById('under-right'),
   flipSheet: document.getElementById('flip-sheet'),
+  flipBottom: document.getElementById('flip-bottom'),
   flipFront: document.getElementById('flip-front'),
   flipBack: document.getElementById('flip-back'),
   sheetShadow: document.getElementById('sheet-shadow'),
@@ -119,6 +121,26 @@ function displayTitleForBook(book, index = 0) {
   return coverText || `Book ${index + 1}`;
 }
 
+function displayDescriptionForBook(book) {
+  const explicit = String(book?.description || '').trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const content = contentForBook(book);
+  const pdfPageCount = Number(content.pdfSource?.pageCount || 0);
+  if (hasPdfSource(content) && pdfPageCount > 0) {
+    return pdfPageCount === 1 ? '1 page' : `${pdfPageCount} pages`;
+  }
+
+  const pageCount = Array.isArray(content.pages) ? content.pages.length : 0;
+  if (pageCount > 0) {
+    return pageCount === 1 ? '1 page' : `${pageCount} pages`;
+  }
+
+  return '';
+}
+
 function getBooksFromConfig(config) {
   const sourceBooks = Array.isArray(config?.books) && config.books.length > 0
     ? config.books
@@ -135,6 +157,8 @@ function getBooksFromConfig(config) {
     id: String(book?.id || `book-${index + 1}`),
     title: displayTitleForBook(book, index),
     description: String(book?.description || ''),
+    sideViewColor: normalizeHexColor(book?.sideViewColor || config?.design?.sideViewColor, '#c8b79b'),
+    sideViewOpacity: String(book?.sideViewOpacity ?? ''),
     content: contentForBook(book)
   }));
 }
@@ -216,11 +240,11 @@ function getSideViewMaxWidth() {
 }
 
 function getSideViewColor() {
-  return normalizeHexColor(state.config?.design?.sideViewColor, '#c8b79b');
+  return normalizeHexColor(state.activeBook?.sideViewColor || state.config?.design?.sideViewColor, '#c8b79b');
 }
 
 function getSideViewOpacity() {
-  const value = Number(state.config?.design?.sideViewOpacity);
+  const value = Number(state.activeBook?.sideViewOpacity || state.config?.design?.sideViewOpacity);
   return clamp(Number.isFinite(value) ? value : 1, 0, 1);
 }
 
@@ -786,6 +810,85 @@ function stopActiveAnimation() {
   }
 }
 
+function clearPeelClipDefinitions() {
+  const defs = document.querySelector('.peel-svg-clip-element defs');
+  if (defs) {
+    defs.replaceChildren();
+  }
+}
+
+function resetPeelLayer(element) {
+  element.classList.remove('peel-layer');
+  element.style.clipPath = '';
+  element.style.webkitClipPath = '';
+  element.style.transform = '';
+  element.style.webkitTransform = '';
+  element.style.boxShadow = '';
+  element.style.webkitBoxShadow = '';
+  element.style.filter = '';
+  element.style.webkitFilter = '';
+  element.style.opacity = '';
+  element.style.backgroundImage = '';
+  element.style.zIndex = '';
+  element.querySelectorAll(
+    '.peel-top-shadow, .peel-back-shadow, .peel-back-reflection, .peel-bottom-shadow'
+  ).forEach((node) => node.remove());
+}
+
+function resetPeelEffect() {
+  state.peelInstance?.removeEvents?.();
+  state.peelInstance = null;
+  clearPeelClipDefinitions();
+
+  elements.flipSheet.classList.remove('peel-ready', 'peel-mode', 'top-corner-mode');
+  [elements.flipFront, elements.flipBack, elements.flipBottom].forEach(resetPeelLayer);
+}
+
+function ensureWebGLTurner() {
+  if (!window.WebGLPageTurn?.isSupported?.()) {
+    return null;
+  }
+
+  if (state.webglTurner) {
+    return state.webglTurner;
+  }
+
+  try {
+    state.webglTurner = new WebGLPageTurn(elements.shell);
+    return state.webglTurner;
+  } catch (error) {
+    console.warn('WebGL page turn renderer is unavailable:', error);
+    state.webglTurner = null;
+    return null;
+  }
+}
+
+function resetWebGLTurnEffect() {
+  state.webglTurner?.stop?.();
+  elements.flipSheet.style.visibility = '';
+}
+
+async function setupWebGLForFlip(flip) {
+  const turner = ensureWebGLTurner();
+  if (!turner) {
+    return false;
+  }
+
+  try {
+    await turner.start({
+      frontElement: elements.flipFront,
+      backElement: elements.flipBack,
+      direction: flip.visualDirection
+    });
+    elements.flipSheet.style.visibility = 'hidden';
+    return true;
+  } catch (error) {
+    console.warn('Could not prepare WebGL page turn. Falling back to DOM renderer:', error);
+    resetWebGLTurnEffect();
+    return false;
+  }
+}
+
 function getVisiblePageEdges(spread) {
   const rect = elements.shell.getBoundingClientRect();
   const half = rect.width / 2;
@@ -871,9 +974,12 @@ async function renderStaticSpread() {
   elements.underLeft.classList.add('hidden');
   elements.underRight.classList.add('hidden');
 
+  resetWebGLTurnEffect();
+  resetPeelEffect();
   elements.flipSheet.classList.add('hidden');
   elements.flipSheet.classList.remove('forward', 'backward');
   elements.flipSheet.style.transform = '';
+  elements.flipSheet.style.visibility = '';
   elements.sheetShadow.style.opacity = '0';
   elements.sheetHighlight.style.opacity = '0';
 
@@ -889,14 +995,17 @@ async function applyDesign() {
   const { design } = state.config;
   const backgroundUrl = await resolveAssetUrl(design.backgroundImage);
   const mapUrl = await resolveAssetUrl(design.displacementMap);
-  const sideTextureUrl = await resolveAssetUrl(design.sideViewTexture || '');
   const sideViewColor = getSideViewColor();
   const sideViewOpacity = getSideViewOpacity();
   const appBackgroundColor = design.appBackgroundColor || '#101319';
+  const defaultBackgroundUrl = new URL('./assets/Background.png', window.location.href).toString();
+  const resolvedBackgroundUrl = backgroundUrl || defaultBackgroundUrl;
+  const sideLeftTextureUrl = new URL('./assets/side-left.png', window.location.href).toString();
+  const sideRightTextureUrl = new URL('./assets/side-right.png', window.location.href).toString();
 
   document.body.style.backgroundColor = appBackgroundColor;
   elements.backgroundLayer.style.backgroundColor = appBackgroundColor;
-  elements.backgroundLayer.style.backgroundImage = backgroundUrl ? `url("${backgroundUrl}")` : 'none';
+  elements.backgroundLayer.style.backgroundImage = `url("${resolvedBackgroundUrl}")`;
 
   const pageWidth = getPageWidth();
   const pageHeight = getPageHeight();
@@ -904,13 +1013,16 @@ async function applyDesign() {
   elements.shell.style.width = `${pageWidth * 2}px`;
   elements.shell.style.height = `${pageHeight}px`;
 
-  const stackTexture = sideTextureUrl ? `url("${sideTextureUrl}")` : 'none';
-  elements.sideLeftStack.style.backgroundImage = stackTexture;
-  elements.sideRightStack.style.backgroundImage = stackTexture;
+  elements.sideLeftStack.style.backgroundImage = `url("${sideLeftTextureUrl}")`;
+  elements.sideRightStack.style.backgroundImage = `url("${sideRightTextureUrl}")`;
   elements.sideLeftStack.style.backgroundColor = sideViewColor;
   elements.sideRightStack.style.backgroundColor = sideViewColor;
-  elements.sideLeftStack.style.opacity = String(sideViewOpacity);
-  elements.sideRightStack.style.opacity = String(sideViewOpacity);
+  elements.sideLeftStack.style.setProperty('--side-texture-tint', sideViewColor);
+  elements.sideRightStack.style.setProperty('--side-texture-tint', sideViewColor);
+  elements.sideLeftStack.style.setProperty('--side-texture-tint-opacity', String(sideViewOpacity));
+  elements.sideRightStack.style.setProperty('--side-texture-tint-opacity', String(sideViewOpacity));
+  elements.sideLeftStack.style.opacity = '1';
+  elements.sideRightStack.style.opacity = '1';
 
   const displacementScale = mapUrl ? 18 : 0;
   elements.stage.style.filter = mapUrl ? 'url(#book-displacement-filter)' : 'none';
@@ -971,6 +1083,203 @@ function computeFlipFromStep(step, current, target) {
   };
 }
 
+function canUsePeelForFlip(flip) {
+  return Boolean(
+    window.Peel?.supported &&
+    flip?.sourceOpenState?.factor > 0.001 &&
+    flip?.targetOpenState?.factor > 0.001 &&
+    !isCoverSlot(flip.frontSlot) &&
+    !isCoverSlot(flip.backSlot)
+  );
+}
+
+function configurePeelPath(peel) {
+  const width = Math.max(1, peel.width);
+  const height = Math.max(1, peel.height);
+
+  peel.setPeelPath(
+    width,
+    height,
+    width * 0.54,
+    height * 0.12,
+    width * -0.34,
+    height * 1.08,
+    width * -0.82,
+    height * 0.88
+  );
+}
+
+function setupPeelForFlip(flip) {
+  resetPeelEffect();
+  elements.flipSheet.classList.add('peel-mode');
+  elements.flipSheet.style.transform = '';
+  elements.flipSheet.getBoundingClientRect();
+
+  const peel = new Peel(elements.flipSheet, {
+    mode: 'book',
+    setPeelOnInit: false,
+    clippingBoxScale: 4.5,
+    topShadowAlpha: 0.34,
+    topShadowBlur: 18,
+    topShadowOffsetX: 0,
+    topShadowOffsetY: 6,
+    backShadowAlpha: 0.18,
+    backShadowSize: 0.08,
+    bottomShadowDarkAlpha: 0.38,
+    bottomShadowLightAlpha: 0.08,
+    'top-element': elements.flipFront,
+    'back-element': elements.flipBack,
+    'bottom-element': elements.flipBottom
+  });
+
+  configurePeelPath(peel);
+  state.peelInstance = peel;
+  applyPeelRootTransform();
+}
+
+function applyPeelProgress(progress) {
+  const peel = state.peelInstance;
+  if (!peel) {
+    return;
+  }
+
+  peel.setTimeAlongPath(clamp(progress, 0, 1));
+}
+
+function clientToPeelPoint(clientX, clientY) {
+  const peel = state.peelInstance;
+  if (!peel || !state.flip) {
+    return null;
+  }
+
+  const rect = elements.flipSheet.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) {
+    return null;
+  }
+
+  const rawX = ((clientX - rect.left) / rect.width) * peel.width;
+  const rawY = ((clientY - rect.top) / rect.height) * peel.height;
+  const localX = state.flip.visualDirection === 'backward' ? peel.width - rawX : rawX;
+  const edgeInset = getPeelEdgeInset(peel);
+
+  return {
+    x: clamp(localX, peel.width * -1.15, peel.width * 1.08),
+    rawY,
+    y: clamp(rawY, 0, peel.height * 1.04),
+    edgeY: clamp(rawY, edgeInset, peel.height - edgeInset),
+    outerDistance: Math.abs(peel.width - localX)
+  };
+}
+
+function getPeelEdgeInset(peel) {
+  return clamp(peel.height * 0.026, 10, 28);
+}
+
+function applyPeelRootTransform() {
+  if (!state.flip) {
+    elements.flipSheet.style.transform = '';
+    elements.flipSheet.classList.remove('top-corner-mode');
+    return;
+  }
+
+  const transforms = [];
+  if (state.flip.visualDirection === 'backward') {
+    transforms.push('scaleX(-1)');
+  }
+
+  if (state.flip.peelDragMode === 'top-corner') {
+    transforms.push('scaleY(-1)');
+  }
+
+  elements.flipSheet.style.transform = transforms.join(' ');
+  elements.flipSheet.classList.toggle('top-corner-mode', state.flip.peelDragMode === 'top-corner');
+}
+
+function rememberPeelCorner(y, mode) {
+  const peel = state.peelInstance;
+  if (!peel || !state.flip) {
+    return;
+  }
+
+  state.flip.peelDragMode = mode;
+  state.flip.peelCornerY = y;
+  peel.setCorner(peel.width, y);
+  applyPeelRootTransform();
+}
+
+function setPeelDragCorner(point) {
+  const peel = state.peelInstance;
+  if (!peel || !state.flip || !point) {
+    return;
+  }
+
+  const cornerSnapDistance = clamp(peel.height * 0.075, 36, 84);
+  const cornerOuterDistance = clamp(peel.width * 0.12, 42, 96);
+  if (point.rawY <= cornerSnapDistance && point.outerDistance <= cornerOuterDistance) {
+    rememberPeelCorner(peel.height, 'top-corner');
+    return;
+  }
+
+  if (point.rawY >= peel.height - cornerSnapDistance && point.outerDistance <= cornerOuterDistance) {
+    rememberPeelCorner(peel.height, 'bottom-corner');
+    return;
+  }
+
+  rememberPeelCorner(point.edgeY, 'edge');
+}
+
+function pointForPeel(point) {
+  const peel = state.peelInstance;
+  if (!peel || !state.flip || !point) {
+    return point;
+  }
+
+  if (state.flip.peelDragMode !== 'top-corner') {
+    return point;
+  }
+
+  return {
+    ...point,
+    y: peel.height - clamp(point.rawY, 0, peel.height)
+  };
+}
+
+function updatePeelDragCorner(point) {
+  const peel = state.peelInstance;
+  if (!peel || !state.flip || !point) {
+    return;
+  }
+
+  if (state.flip.peelDragMode === 'edge') {
+    rememberPeelCorner(point.edgeY, 'edge');
+  }
+}
+
+function applyPeelPointerDrag(clientX, clientY, initialize = false) {
+  const peel = state.peelInstance;
+  const point = clientToPeelPoint(clientX, clientY);
+  if (!peel || !point) {
+    applyFlipProgress(pointerToProgress(clientX));
+    return;
+  }
+
+  if (initialize) {
+    setPeelDragCorner(point);
+  } else {
+    updatePeelDragCorner(point);
+  }
+
+  if (state.flip.peelDragMode === 'top-corner' || state.flip.peelDragMode === 'bottom-corner') {
+    point.y = clamp(point.y, 0, peel.height);
+  }
+
+  const peelPoint = pointForPeel(point);
+  applyFlipProgress(pointerToProgress(clientX), { skipPeelPath: true });
+  peel.setPeelPosition(peelPoint.x, peelPoint.y);
+  state.flip.peelWasDragged = true;
+  state.flip.peelPoint = peelPoint;
+}
+
 async function prepareFlip(step) {
   if (state.view !== 'reader' || state.returningToShelf || state.isAnimating || state.flip) {
     return false;
@@ -988,40 +1297,62 @@ async function prepareFlip(step) {
   }
 
   const flip = computeFlipFromStep(step, current, target);
+  flip.useWebGL = false;
+  flip.usePeel = false;
+  const underElement = flip.frontSide === 'right' ? elements.underRight : elements.underLeft;
 
   await Promise.all([
     renderSlot(elements.flipFront, flip.frontSlot),
     renderSlot(elements.flipBack, flip.backSlot),
-    renderSlot(flip.frontSide === 'right' ? elements.underRight : elements.underLeft, flip.underSlot)
+    renderSlot(elements.flipBottom, flip.underSlot),
+    renderSlot(underElement, flip.underSlot)
   ]);
 
   await renderBasePages(flip.sourceOpenState);
 
-  if (flip.frontSide === 'right') {
-    elements.staticRight.classList.add('hidden');
-    elements.underRight.classList.remove('hidden');
-    elements.underLeft.classList.add('hidden');
-  } else {
-    elements.staticLeft.classList.add('hidden');
-    elements.underLeft.classList.remove('hidden');
-    elements.underRight.classList.add('hidden');
-  }
-
-  showElementIfSlot(flip.frontSide === 'right' ? elements.underRight : elements.underLeft, flip.underSlot);
-
   elements.flipSheet.classList.remove('hidden');
   elements.flipSheet.classList.remove('forward', 'backward');
   elements.flipSheet.classList.add(flip.visualDirection);
+  elements.flipSheet.classList.remove('peel-mode', 'top-corner-mode');
+  elements.flipSheet.style.visibility = 'hidden';
   elements.shell.classList.toggle('single-view', isSingleSpread(current));
   elements.edgePrevZone.classList.add('hidden');
   elements.edgeNextZone.classList.add('hidden');
 
   state.flip = flip;
+
+  flip.useWebGL = await setupWebGLForFlip(flip);
+  flip.usePeel = !flip.useWebGL && canUsePeelForFlip(flip);
+
+  if (!flip.useWebGL) {
+    elements.flipSheet.style.visibility = '';
+  }
+
+  elements.flipSheet.classList.toggle('peel-mode', flip.usePeel);
+
+  if (flip.usePeel) {
+    setupPeelForFlip(flip);
+  }
+
+  if (flip.frontSide === 'right') {
+    elements.staticRight.classList.add('hidden');
+    elements.underRight.classList.toggle('hidden', flip.usePeel);
+    elements.underLeft.classList.add('hidden');
+  } else {
+    elements.staticLeft.classList.add('hidden');
+    elements.underLeft.classList.toggle('hidden', flip.usePeel);
+    elements.underRight.classList.add('hidden');
+  }
+
+  if (!flip.usePeel) {
+    showElementIfSlot(underElement, flip.underSlot);
+  }
+
   applyFlipProgress(0);
   return true;
 }
 
-function applyFlipProgress(progress) {
+function applyFlipProgress(progress, options = {}) {
   if (!state.flip) {
     return;
   }
@@ -1034,9 +1365,18 @@ function applyFlipProgress(progress) {
   const skew = (isForward ? -1 : 1) * bend * 6;
   const lift = bend * 14;
 
-  elements.flipSheet.style.transform = `translateZ(${lift}px) rotateY(${angle}deg) skewY(${skew}deg)`;
+  if (state.flip.useWebGL) {
+    state.webglTurner?.render?.(state.flip.progress);
+  } else if (state.flip.usePeel) {
+    if (!options.skipPeelPath) {
+      applyPeelProgress(state.flip.progress);
+    }
+  } else {
+    elements.flipSheet.style.transform = `translateZ(${lift}px) rotateY(${angle}deg) skewY(${skew}deg)`;
+  }
+
   const closedOpenTransition = state.flip.sourceOpenState.factor !== state.flip.targetOpenState.factor;
-  if (closedOpenTransition) {
+  if (closedOpenTransition || state.flip.usePeel || state.flip.useWebGL) {
     elements.sheetShadow.style.opacity = '0';
     elements.sheetHighlight.style.opacity = '0';
   } else {
@@ -1122,15 +1462,76 @@ async function finishFlip(commit) {
   state.isAnimating = false;
   await renderStaticSpread();
 
-  if (commit && state.view === 'reader' && state.hasOpenedActiveBook && state.spreadIndex === 0) {
-    window.setTimeout(() => {
-      closeActiveBookToShelf({ renderCover: false });
-    }, 180);
-  }
 }
 
-function animateFlipTo(targetProgress) {
+function animateDraggedPeelTo(targetProgress, options = {}) {
+  if (!state.flip || !state.peelInstance) {
+    return;
+  }
+
+  stopActiveAnimation();
+  state.isAnimating = true;
+
+  const peel = state.peelInstance;
+  const startProgress = state.flip.progress;
+  const distance = Math.abs(targetProgress - startProgress);
+  const baseDuration = Math.max(220, Number(state.config.design.turnAnimationMs) || 700);
+  const duration = Math.max(120, baseDuration * distance);
+  const startPoint = state.flip.peelPoint || {
+    x: lerp(peel.width, -peel.width * 0.9, startProgress),
+    y: state.flip.peelCornerY ?? peel.height
+  };
+  const edgeInset = getPeelEdgeInset(peel);
+  const fallbackCornerY = clamp(startPoint.edgeY ?? startPoint.y, edgeInset, peel.height - edgeInset);
+  const cornerY = state.flip.peelCornerY ?? fallbackCornerY;
+  const commitX = -peel.width * 0.95;
+  const endPoint = targetProgress > 0.5
+    ? { x: commitX, y: cornerY }
+    : { x: peel.width, y: cornerY };
+  const startTime = performance.now();
+
+  rememberPeelCorner(cornerY, state.flip.peelDragMode || 'edge');
+
+  const tick = (now) => {
+    if (!state.flip || !state.peelInstance) {
+      state.isAnimating = false;
+      return;
+    }
+
+    const elapsed = now - startTime;
+    const t = clamp(elapsed / duration, 0, 1);
+    const eased = t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) ** 2) / 2;
+    const value = lerp(startProgress, targetProgress, eased);
+    const point = {
+      x: lerp(startPoint.x, endPoint.x, eased),
+      y: lerp(startPoint.y, endPoint.y, eased)
+    };
+
+    applyFlipProgress(value, { skipPeelPath: true });
+    state.peelInstance.setPeelPosition(point.x, point.y);
+    state.flip.peelPoint = point;
+
+    if (t < 1) {
+      state.animationFrame = requestAnimationFrame(tick);
+      return;
+    }
+
+    state.animationFrame = null;
+    finishFlip(targetProgress > 0.5).then(() => {
+      options.onComplete?.();
+    });
+  };
+
+  state.animationFrame = requestAnimationFrame(tick);
+}
+
+function animateFlipTo(targetProgress, options = {}) {
   if (!state.flip) {
+    return;
+  }
+
+  if (state.flip.usePeel && state.flip.peelWasDragged) {
+    animateDraggedPeelTo(targetProgress, options);
     return;
   }
 
@@ -1162,7 +1563,9 @@ function animateFlipTo(targetProgress) {
     }
 
     state.animationFrame = null;
-    finishFlip(targetProgress > 0.5);
+    finishFlip(targetProgress > 0.5).then(() => {
+      options.onComplete?.();
+    });
   };
 
   state.animationFrame = requestAnimationFrame(tick);
@@ -1222,6 +1625,38 @@ function shouldCommitTouchFlick(swipe, flip = state.flip) {
   return signedDeltaX >= flickDistance || (signedDeltaX >= 28 && signedVelocityX >= 0.75);
 }
 
+function quickFlickStep(gesture) {
+  if (!gesture?.shellRect) {
+    return 0;
+  }
+
+  const elapsed = Math.max(1, gesture.lastTime - gesture.startTime);
+  const deltaX = gesture.lastX - gesture.startX;
+  const deltaY = gesture.lastY - gesture.startY;
+  const horizontalDominant = Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
+  if (!horizontalDominant) {
+    return 0;
+  }
+
+  const distance = Math.abs(deltaX);
+  const velocity = Math.abs(deltaX / elapsed);
+  const flickDistance = getTouchFlickDistance(gesture.shellRect);
+  const isFlick = distance >= flickDistance || (distance >= 28 && velocity >= 0.62);
+  if (!isFlick) {
+    return 0;
+  }
+
+  return deltaX < 0 ? 1 : -1;
+}
+
+function stepForFlip(flip) {
+  if (!flip) {
+    return 0;
+  }
+
+  return flip.targetSpreadIndex > flip.sourceSpreadIndex ? 1 : -1;
+}
+
 function resetTouchSwipe(pointerId = null) {
   if (!state.touchSwipe) {
     return;
@@ -1232,6 +1667,59 @@ function resetTouchSwipe(pointerId = null) {
   }
 
   state.touchSwipe = null;
+}
+
+function resetMouseSwipe(pointerId = null) {
+  if (!state.mouseSwipe) {
+    return;
+  }
+
+  if (pointerId != null && state.mouseSwipe.pointerId !== pointerId) {
+    return;
+  }
+
+  state.mouseSwipe = null;
+}
+
+async function maybeStartTouchFlip(event) {
+  const swipe = state.touchSwipe;
+  if (!swipe || state.flip || state.isAnimating || swipe.activating) {
+    return;
+  }
+
+  const deltaX = swipe.lastX - swipe.startX;
+  const deltaY = swipe.lastY - swipe.startY;
+  const enoughDistance = Math.abs(deltaX) >= getTouchSwipeActivationDistance(swipe.shellRect);
+  const horizontalDominant = Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
+  const step = touchSwipeStepFromDelta(deltaX);
+
+  if (!step || !enoughDistance || !horizontalDominant) {
+    return;
+  }
+
+  swipe.activating = true;
+  const ready = await prepareFlip(step);
+  swipe.activating = false;
+
+  if (!ready || !state.flip || state.touchSwipe !== swipe) {
+    return;
+  }
+
+  state.flip.dragging = true;
+  state.flip.pointerId = event.pointerId;
+  state.flip.dragStartX = swipe.startX;
+  state.flip.dragStartY = swipe.startY;
+  state.flip.dragStartTime = swipe.startTime;
+  state.flip.dragLastX = swipe.lastX;
+  state.flip.dragLastY = swipe.lastY;
+  state.flip.dragLastTime = swipe.lastTime;
+  state.flip.startedFromEdgeZone = false;
+
+  if (state.flip.usePeel) {
+    applyPeelPointerDrag(swipe.lastX, swipe.lastY, true);
+  } else {
+    applyFlipProgress(pointerToProgress(swipe.lastX));
+  }
 }
 
 function decideStepFromPointer(clientX, rect) {
@@ -1258,6 +1746,19 @@ function decideStepFromPointer(clientX, rect) {
   return 0;
 }
 
+function captureReaderPointer(event) {
+  const target = event.currentTarget || elements.shell;
+  try {
+    target.setPointerCapture?.(event.pointerId);
+  } catch {
+    try {
+      elements.shell.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture is an optimization for continuity; dragging still works without it.
+    }
+  }
+}
+
 async function onPointerDown(event) {
   if (state.view !== 'reader' || state.returningToShelf || state.flip || state.isAnimating) {
     return;
@@ -1280,7 +1781,7 @@ async function onPointerDown(event) {
       lastTime: event.timeStamp,
       shellRect: rect
     };
-    elements.shell.setPointerCapture(event.pointerId);
+    captureReaderPointer(event);
     return;
   }
 
@@ -1289,19 +1790,71 @@ async function onPointerDown(event) {
     return;
   }
 
+  const mouseSwipe = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    lastX: event.clientX,
+    lastY: event.clientY,
+    startTime: event.timeStamp,
+    lastTime: event.timeStamp,
+    shellRect: rect,
+    released: false,
+    cancelled: false,
+    startedFromEdgeZone:
+      event.currentTarget === elements.edgePrevZone || event.currentTarget === elements.edgeNextZone
+  };
+  state.mouseSwipe = mouseSwipe;
+  captureReaderPointer(event);
+
   const ready = await prepareFlip(step);
   if (!ready || !state.flip) {
+    if (state.mouseSwipe === mouseSwipe) {
+      resetMouseSwipe(event.pointerId);
+    }
     return;
   }
 
-  state.flip.dragging = true;
-  state.flip.pointerId = event.pointerId;
+  if (mouseSwipe.cancelled || state.mouseSwipe !== mouseSwipe) {
+    await finishFlip(false);
+    return;
+  }
 
-  elements.shell.setPointerCapture(event.pointerId);
-  applyFlipProgress(pointerToProgress(event.clientX));
+  state.flip.dragging = !mouseSwipe.released;
+  state.flip.pointerId = event.pointerId;
+  state.flip.dragStartX = mouseSwipe.startX;
+  state.flip.dragStartY = mouseSwipe.startY;
+  state.flip.dragStartTime = mouseSwipe.startTime;
+  state.flip.dragLastX = mouseSwipe.lastX;
+  state.flip.dragLastY = mouseSwipe.lastY;
+  state.flip.dragLastTime = mouseSwipe.lastTime;
+  state.flip.startedFromEdgeZone = mouseSwipe.startedFromEdgeZone;
+
+  if (state.flip.usePeel) {
+    applyPeelPointerDrag(mouseSwipe.lastX, mouseSwipe.lastY, true);
+  } else {
+    applyFlipProgress(pointerToProgress(mouseSwipe.lastX));
+  }
+
+  if (mouseSwipe.released) {
+    completeActiveFlipGesture(mouseSwipe);
+    return;
+  }
+
+  resetMouseSwipe(event.pointerId);
 }
 
-function onPointerMove(event) {
+async function onPointerMove(event) {
+  if (
+    state.mouseSwipe &&
+    event.pointerId === state.mouseSwipe.pointerId &&
+    event.pointerType === 'mouse'
+  ) {
+    state.mouseSwipe.lastX = event.clientX;
+    state.mouseSwipe.lastY = event.clientY;
+    state.mouseSwipe.lastTime = event.timeStamp;
+  }
+
   if (
     state.touchSwipe &&
     event.pointerId === state.touchSwipe.pointerId &&
@@ -1312,6 +1865,10 @@ function onPointerMove(event) {
     state.touchSwipe.lastTime = event.timeStamp;
   }
 
+  if (!state.flip && isTouchLikePointer(event.pointerType)) {
+    await maybeStartTouchFlip(event);
+  }
+
   if (!state.flip || !state.flip.dragging) {
     return;
   }
@@ -1320,10 +1877,78 @@ function onPointerMove(event) {
     return;
   }
 
-  applyFlipProgress(pointerToProgress(event.clientX));
+  state.flip.dragLastX = event.clientX;
+  state.flip.dragLastY = event.clientY;
+  state.flip.dragLastTime = event.timeStamp;
+
+  if (state.flip.usePeel) {
+    applyPeelPointerDrag(event.clientX, event.clientY);
+  } else {
+    applyFlipProgress(pointerToProgress(event.clientX));
+  }
+}
+
+function completeActiveFlipGesture(gesture) {
+  if (!state.flip) {
+    resetTouchSwipe(gesture.pointerId);
+    resetMouseSwipe(gesture.pointerId);
+    return;
+  }
+
+  state.flip.dragging = false;
+  state.flip.dragLastX = gesture.lastX;
+  state.flip.dragLastY = gesture.lastY;
+  state.flip.dragLastTime = gesture.lastTime;
+
+  const touchSwipe = state.touchSwipe;
+  const flickStep = quickFlickStep({
+    startX: gesture.startX,
+    startY: gesture.startY,
+    lastX: gesture.lastX,
+    lastY: gesture.lastY,
+    startTime: gesture.startTime,
+    lastTime: gesture.lastTime,
+    shellRect: state.flip.shellRect
+  });
+  const activeStep = stepForFlip(state.flip);
+  const dragDistance = Math.hypot(
+    gesture.lastX - gesture.startX,
+    gesture.lastY - gesture.startY
+  );
+  const edgeClickCommit =
+    state.flip.startedFromEdgeZone && dragDistance < getTouchSwipeActivationDistance(state.flip.shellRect);
+  const shouldRedirect = flickStep && flickStep !== activeStep;
+  const shouldCommit =
+    !shouldRedirect &&
+    (edgeClickCommit || flickStep === activeStep || state.flip.progress > 0.5 || shouldCommitTouchFlick(touchSwipe, state.flip));
+
+  resetTouchSwipe(gesture.pointerId);
+  resetMouseSwipe(gesture.pointerId);
+
+  if (shouldRedirect) {
+    animateFlipTo(0, {
+      onComplete: () => {
+        triggerStep(flickStep);
+      }
+    });
+    return;
+  }
+
+  animateFlipTo(shouldCommit ? 1 : 0);
 }
 
 function onPointerUp(event) {
+  if (
+    state.mouseSwipe &&
+    event.pointerId === state.mouseSwipe.pointerId &&
+    event.pointerType === 'mouse'
+  ) {
+    state.mouseSwipe.lastX = event.clientX;
+    state.mouseSwipe.lastY = event.clientY;
+    state.mouseSwipe.lastTime = event.timeStamp;
+    state.mouseSwipe.released = true;
+  }
+
   if (
     state.touchSwipe &&
     event.pointerId === state.touchSwipe.pointerId &&
@@ -1335,22 +1960,21 @@ function onPointerUp(event) {
   }
 
   if (!state.flip && state.touchSwipe && event.pointerId === state.touchSwipe.pointerId) {
-    const deltaX = state.touchSwipe.lastX - state.touchSwipe.startX;
-    const enoughDistance = Math.abs(deltaX) >= getTouchSwipeActivationDistance(state.touchSwipe.shellRect);
-    const step = touchSwipeStepFromDelta(deltaX);
-    const quickSwipe = shouldCommitTouchFlick(state.touchSwipe, {
-      visualDirection: step > 0 ? 'forward' : 'backward',
-      shellRect: state.touchSwipe.shellRect
-    });
+    const step = quickFlickStep(state.touchSwipe);
     resetTouchSwipe(event.pointerId);
-    if (step && enoughDistance && quickSwipe) {
+    if (step) {
       triggerStep(step);
     }
     return;
   }
 
+  if (!state.flip && state.mouseSwipe && event.pointerId === state.mouseSwipe.pointerId) {
+    return;
+  }
+
   if (!state.flip || !state.flip.dragging) {
     resetTouchSwipe(event.pointerId);
+    resetMouseSwipe(event.pointerId);
     return;
   }
 
@@ -1358,14 +1982,25 @@ function onPointerUp(event) {
     return;
   }
 
-  state.flip.dragging = false;
-  const shouldCommit = state.flip.progress > 0.5 || shouldCommitTouchFlick(state.touchSwipe, state.flip);
-  resetTouchSwipe(event.pointerId);
-  animateFlipTo(shouldCommit ? 1 : 0);
+  completeActiveFlipGesture({
+    pointerId: event.pointerId,
+    startX: state.flip.dragStartX ?? event.clientX,
+    startY: state.flip.dragStartY ?? event.clientY,
+    lastX: event.clientX,
+    lastY: event.clientY,
+    startTime: state.flip.dragStartTime ?? event.timeStamp,
+    lastTime: event.timeStamp,
+    shellRect: state.flip.shellRect
+  });
 }
 
 function onPointerCancel(event) {
+  if (state.mouseSwipe && event.pointerId === state.mouseSwipe.pointerId) {
+    state.mouseSwipe.cancelled = true;
+  }
+
   resetTouchSwipe(event.pointerId);
+  resetMouseSwipe(event.pointerId);
 
   if (!state.flip || !state.flip.dragging) {
     return;
@@ -1410,7 +2045,7 @@ function shelfBookElement(bookId) {
 function getShelfMotionForBook(bookId) {
   const target = shelfBookElement(bookId);
   const shellRect = elements.shell.getBoundingClientRect();
-  const targetRect = target?.querySelector('.shelf-book-cover')?.getBoundingClientRect();
+  const targetRect = target?.getBoundingClientRect();
 
   if (!targetRect || shellRect.width <= 0 || shellRect.height <= 0) {
     return {
@@ -1479,29 +2114,12 @@ function nextFrame() {
 }
 
 async function buildShelfBookMarkup(book, index) {
-  const content = contentForBook(book);
   const title = displayTitleForBook(book, index);
-  const cover = normalizeBookPage(content.frontCover, title);
-  let coverMarkup = `<div class="rich-content-root">${cover.html || `<p>${escapeHtml(title)}</p>`}</div>`;
-
-  if (hasPdfSource(content)) {
-    const previewSrc = await renderPdfShelfPreview(content.pdfSource);
-    coverMarkup = previewSrc
-      ? `<img class="shelf-pdf-preview" alt="${escapeHtml(title)} first page" src="${previewSrc}" draggable="false" />`
-      : `<div class="shelf-pdf-cover"><span>PDF</span><strong>${escapeHtml(title)}</strong></div>`;
-  } else if (cover.type === 'image' && cover.imagePath) {
-    const src = await resolveAssetUrl(cover.imagePath);
-    coverMarkup = `<img alt="${escapeHtml(title)} cover" src="${src}" draggable="false" />`;
-  }
-
-  const pageCount = Array.isArray(content.pages) ? content.pages.length : 0;
-  const meta = hasPdfSource(content) ? '' : (pageCount === 1 ? '1 page' : `${pageCount} pages`);
-  const metaMarkup = meta ? `<div class="shelf-book-meta">${escapeHtml(meta)}</div>` : '';
+  const description = displayDescriptionForBook(book);
 
   return `
-    <div class="shelf-book-cover">${coverMarkup}</div>
-    <div class="shelf-book-title">${escapeHtml(title)}</div>
-    ${metaMarkup}
+    <span class="shelf-book-title">${escapeHtml(title)}</span>
+    <span class="shelf-book-description">${description ? escapeHtml(description) : '&nbsp;'}</span>
   `;
 }
 
@@ -1522,6 +2140,10 @@ async function renderShelf() {
     button.className = 'shelf-book';
     button.dataset.bookId = book.id;
     button.setAttribute('aria-label', `Open ${displayTitleForBook(book, index)}`);
+    button.classList.toggle('active', book.id === state.activeBookId);
+    if (book.id === state.activeBookId) {
+      button.setAttribute('aria-current', 'true');
+    }
     button.innerHTML = await buildShelfBookMarkup(book, index);
     button.addEventListener('click', () => {
       openBookFromShelf(book.id);
@@ -1572,9 +2194,13 @@ async function loadBookIntoReader(book, options = {}) {
   const requestedSpread = typeof options.spreadIndex === 'number' ? options.spreadIndex : defaultSpread;
   state.spreadIndex = clamp(requestedSpread, 0, maxSpread);
   state.flip = null;
+  resetWebGLTurnEffect();
+  resetPeelEffect();
   state.isAnimating = false;
   resetTouchSwipe();
+  resetMouseSwipe();
 
+  await applyDesign();
   await renderStaticSpread();
 }
 
@@ -1584,10 +2210,10 @@ async function showShelfOnly() {
   state.hasOpenedActiveBook = false;
   clearIdleRandomFlipTimers();
   resetTouchSwipe();
+  resetMouseSwipe();
   elements.readerFrame.classList.remove('from-shelf', 'to-shelf');
   elements.readerFrame.style.opacity = '';
   elements.stage.classList.add('hidden');
-  elements.readerMenu.classList.add('hidden');
   elements.shelfView.classList.remove('hidden');
   await renderShelf();
   positionEdgeZones();
@@ -1609,25 +2235,13 @@ async function openBookFromShelf(bookId) {
   state.returningToShelf = false;
   state.hasOpenedActiveBook = false;
   elements.readerFrame.classList.remove('from-shelf', 'to-shelf');
-  elements.readerFrame.style.opacity = '0';
+  elements.readerFrame.style.opacity = '';
   elements.stage.classList.remove('hidden');
-  elements.readerMenu.classList.remove('hidden');
+  elements.shelfView.classList.remove('hidden');
 
   await loadBookIntoReader(book);
   state.hasOpenedActiveBook = state.sourceMode !== 'pdf' && state.spreadIndex > 0;
-  elements.edgePrevZone.classList.add('hidden');
-  elements.edgeNextZone.classList.add('hidden');
-
-  const motion = getShelfMotionForBook(book.id);
-  setReaderFrameMotion(motion);
-  elements.readerFrame.classList.add('from-shelf');
-  elements.readerFrame.style.opacity = '';
-  elements.readerFrame.getBoundingClientRect();
-
-  await nextFrame();
-  elements.readerFrame.classList.remove('from-shelf');
-  await waitForReaderFrameTransition();
-  elements.shelfView.classList.add('hidden');
+  await renderShelf();
   positionEdgeZones();
   noteUserActivity(true);
 }
@@ -1641,11 +2255,13 @@ async function closeActiveBookToShelf(options = {}) {
   stopActiveAnimation();
   clearIdleRandomFlipTimers();
   resetTouchSwipe();
+  resetMouseSwipe();
   state.flip = null;
+  resetWebGLTurnEffect();
+  resetPeelEffect();
   state.isAnimating = false;
   elements.edgePrevZone.classList.add('hidden');
   elements.edgeNextZone.classList.add('hidden');
-  elements.readerMenu.classList.add('hidden');
 
   if (options.renderCover !== false) {
     if (state.sourceMode !== 'pdf') {
@@ -1691,13 +2307,28 @@ async function reloadFromConfig() {
     if (book) {
       state.view = 'reader';
       elements.stage.classList.remove('hidden');
-      elements.readerMenu.classList.remove('hidden');
-      elements.shelfView.classList.add('hidden');
+      elements.shelfView.classList.remove('hidden');
       await loadBookIntoReader(book, { spreadIndex: previousSpreadIndex });
       state.hasOpenedActiveBook = state.sourceMode !== 'pdf' && state.spreadIndex > 0;
+      await renderShelf();
       noteUserActivity(true);
       return;
     }
+  }
+
+  const book = getBookById(state.activeBookId) || state.books[0];
+  if (book) {
+    state.view = 'reader';
+    state.returningToShelf = false;
+    elements.readerFrame.classList.remove('from-shelf', 'to-shelf');
+    elements.readerFrame.style.opacity = '';
+    elements.stage.classList.remove('hidden');
+    elements.shelfView.classList.remove('hidden');
+    await loadBookIntoReader(book);
+    state.hasOpenedActiveBook = state.sourceMode !== 'pdf' && state.spreadIndex > 0;
+    await renderShelf();
+    noteUserActivity(true);
+    return;
   }
 
   await showShelfOnly();
@@ -1723,15 +2354,19 @@ function setupEvents() {
     triggerStep(-1);
   });
 
-  elements.shelfButton.addEventListener('click', () => {
-    closeActiveBookToShelf();
-  });
-
   elements.shell.addEventListener('pointerdown', onPointerDown);
   elements.shell.addEventListener('pointermove', onPointerMove);
   elements.shell.addEventListener('pointerup', onPointerUp);
   elements.shell.addEventListener('pointercancel', onPointerCancel);
   elements.shell.addEventListener('lostpointercapture', onPointerCancel);
+
+  [elements.edgePrevZone, elements.edgeNextZone].forEach((zone) => {
+    zone.addEventListener('pointerdown', onPointerDown);
+    zone.addEventListener('pointermove', onPointerMove);
+    zone.addEventListener('pointerup', onPointerUp);
+    zone.addEventListener('pointercancel', onPointerCancel);
+    zone.addEventListener('lostpointercapture', onPointerCancel);
+  });
 
   window.addEventListener('pointerdown', markActivity, { passive: true });
   window.addEventListener('pointermove', markActivity, { passive: true });
@@ -1743,10 +2378,6 @@ function setupEvents() {
 
     if (state.view !== 'reader') {
       return;
-    }
-
-    if (event.key === 'Escape') {
-      closeActiveBookToShelf();
     }
 
     if (event.key === 'ArrowRight') {
