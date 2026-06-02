@@ -1,7 +1,13 @@
 /* global bookApi */
 
 const state = {
-  config: null
+  config: null,
+  update: {
+    checking: false,
+    available: false,
+    latestVersion: null,
+    currentVersion: null
+  }
 };
 
 const els = {
@@ -26,6 +32,7 @@ const els = {
   updatePolicy: document.getElementById('updatePolicy'),
   detectExternalContent: document.getElementById('detectExternalContent'),
   autoCheckOnLaunch: document.getElementById('autoCheckOnLaunch'),
+  updateAction: document.getElementById('updateAction'),
   adminServerEnabled: document.getElementById('adminServerEnabled'),
   adminServerPort: document.getElementById('adminServerPort'),
   adminServerState: document.getElementById('adminServerState'),
@@ -35,6 +42,37 @@ const els = {
 
 function setStatus(message) {
   els.status.textContent = message;
+}
+
+function renderUpdateAction() {
+  if (state.update.checking) {
+    els.updateAction.textContent = 'Checking...';
+    els.updateAction.disabled = true;
+    return;
+  }
+
+  if (state.update.installing) {
+    els.updateAction.textContent = 'Installing...';
+    els.updateAction.disabled = true;
+    return;
+  }
+
+  if (state.update.downloading) {
+    els.updateAction.textContent = 'Downloading...';
+    els.updateAction.disabled = true;
+    return;
+  }
+
+  if (state.update.available) {
+    els.updateAction.textContent = state.update.latestVersion
+      ? `Update to ${state.update.latestVersion}`
+      : 'Update now';
+    els.updateAction.disabled = false;
+    return;
+  }
+
+  els.updateAction.textContent = 'Check updates';
+  els.updateAction.disabled = false;
 }
 
 function clone(value) {
@@ -110,6 +148,108 @@ async function loadConfig() {
   renderServerState(await window.bookApi.getAdminServerStatus());
 }
 
+async function checkForUpdates({ silent = false } = {}) {
+  state.update = {
+    ...state.update,
+    checking: true,
+    downloading: false,
+    installing: false
+  };
+  renderUpdateAction();
+
+  try {
+    const result = await window.bookApi.checkForUpdates();
+    state.update = {
+      checking: false,
+      downloading: false,
+      installing: false,
+      available: Boolean(result.available),
+      latestVersion: result.latestVersion || null,
+      currentVersion: result.currentVersion || null
+    };
+
+    if (result.available) {
+      setStatus(`Update available: ${result.latestVersion}`);
+    } else if (!silent) {
+      setStatus(result.reason || 'No update available.');
+    }
+
+    return result;
+  } catch (error) {
+    state.update = {
+      ...state.update,
+      checking: false,
+      downloading: false,
+      installing: false,
+      available: false
+    };
+    setStatus(error.message || 'Could not check for updates.');
+    return { available: false, reason: error.message };
+  } finally {
+    renderUpdateAction();
+  }
+}
+
+async function applyUpdate() {
+  state.update = {
+    ...state.update,
+    downloading: true,
+    installing: false
+  };
+  renderUpdateAction();
+  setStatus('Downloading update...');
+
+  try {
+    const result = await window.bookApi.applyUpdate();
+    if (!result.available) {
+      state.update = {
+        checking: false,
+        downloading: false,
+        installing: false,
+        available: false,
+        latestVersion: result.latestVersion || null,
+        currentVersion: result.currentVersion || null
+      };
+      setStatus(result.reason || 'No update available.');
+      return result;
+    }
+
+    if (result.ok === false) {
+      state.update = {
+        ...state.update,
+        downloading: false,
+        installing: false,
+        available: true,
+        latestVersion: result.latestVersion || state.update.latestVersion,
+        currentVersion: result.currentVersion || state.update.currentVersion
+      };
+      setStatus(result.message || 'Could not download update.');
+      return result;
+    }
+
+    state.update = {
+      ...state.update,
+      downloading: false,
+      installing: true,
+      available: true,
+      latestVersion: result.latestVersion || state.update.latestVersion,
+      currentVersion: result.currentVersion || state.update.currentVersion
+    };
+    setStatus(result.message || 'Update downloaded. Installing now.');
+    return result;
+  } catch (error) {
+    state.update = {
+      ...state.update,
+      downloading: false,
+      installing: false
+    };
+    setStatus(error.message || 'Could not install update.');
+    return { ok: false, message: error.message };
+  } finally {
+    renderUpdateAction();
+  }
+}
+
 async function saveConfig() {
   readPrimitiveInputs();
   state.config = clone(await window.bookApi.setConfig(state.config));
@@ -163,24 +303,13 @@ function bindEvents() {
     setStatus('Admin panel opened in the browser.');
   });
 
-  document.getElementById('checkUpdates').addEventListener('click', async () => {
-    const result = await window.bookApi.checkForUpdates();
-    if (result.available) {
-      setStatus(`Update available: ${result.latestVersion}`);
+  els.updateAction.addEventListener('click', async () => {
+    if (state.update.available) {
+      await applyUpdate();
       return;
     }
 
-    setStatus(result.reason || 'No update available.');
-  });
-
-  document.getElementById('downloadUpdate').addEventListener('click', async () => {
-    const result = await window.bookApi.downloadUpdate();
-    setStatus(result.message || 'Download request completed.');
-  });
-
-  document.getElementById('installUpdate').addEventListener('click', async () => {
-    await window.bookApi.installUpdate();
-    setStatus('Installing update...');
+    await checkForUpdates();
   });
 
   document.getElementById('exportPackage').addEventListener('click', async () => {
@@ -206,7 +335,7 @@ function bindEvents() {
   });
 
   window.bookApi.onUpdateDownloaded((payload) => {
-    setStatus(`Update ${payload.version} downloaded. Click Install update.`);
+    setStatus(`Update ${payload.version} downloaded. Installing now.`);
   });
 
   window.bookApi.onAdminServerStateChanged((payload) => {
@@ -217,6 +346,7 @@ function bindEvents() {
 async function bootstrap() {
   bindEvents();
   await loadConfig();
+  await checkForUpdates({ silent: true });
 }
 
 bootstrap();

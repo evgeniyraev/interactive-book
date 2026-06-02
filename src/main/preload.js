@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('bookApi', {
   importPackage: () => ipcRenderer.invoke('package:import'),
   checkForUpdates: () => ipcRenderer.invoke('updates:check'),
   downloadUpdate: () => ipcRenderer.invoke('updates:download'),
+  applyUpdate: () => ipcRenderer.invoke('updates:apply'),
   installUpdate: () => ipcRenderer.invoke('updates:install'),
   getAdminServerStatus: () => ipcRenderer.invoke('admin-server:get-status'),
   openAdminPanel: () => ipcRenderer.invoke('admin-server:open'),

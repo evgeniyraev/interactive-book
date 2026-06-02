@@ -34,6 +34,30 @@ const adminServer = new AdminServer({
   }
 });
 
+async function checkDownloadAndInstallUpdate() {
+  const checkResult = await updateManager.checkForUpdates();
+  if (!checkResult.available) {
+    return checkResult;
+  }
+
+  const downloadResult = await updateManager.downloadUpdate();
+  if (!downloadResult.ok) {
+    return {
+      ...checkResult,
+      ok: false,
+      message: downloadResult.message
+    };
+  }
+
+  updateManager.installDownloadedUpdate();
+  return {
+    ...checkResult,
+    ok: true,
+    installing: true,
+    message: 'Update downloaded. Installing now.'
+  };
+}
+
 function notifyWindows(channel, payload) {
   BrowserWindow.getAllWindows().forEach((window) => {
     window.webContents.send(channel, payload);
@@ -84,12 +108,8 @@ function createMainWindow() {
   }
 
   if (!isDev && config.autoupdate.autoCheckOnLaunch) {
-    updateManager.checkForUpdates().then((result) => {
-      if (result.available) {
-        updateManager.downloadUpdate().then(() => {
-          notifyWindows('update-downloaded', { version: result.latestVersion });
-        });
-      }
+    checkDownloadAndInstallUpdate().catch((error) => {
+      log.error('Automatic update failed', error);
     });
   }
 
@@ -252,6 +272,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle('updates:check', () => updateManager.checkForUpdates());
   ipcMain.handle('updates:download', () => updateManager.downloadUpdate());
+  ipcMain.handle('updates:apply', () => checkDownloadAndInstallUpdate());
   ipcMain.handle('updates:install', () => {
     updateManager.installDownloadedUpdate();
     return { ok: true };
