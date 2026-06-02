@@ -6,7 +6,8 @@ const state = {
     checking: false,
     available: false,
     latestVersion: null,
-    currentVersion: null
+    currentVersion: null,
+    progress: null
   }
 };
 
@@ -44,6 +45,54 @@ function setStatus(message) {
   els.status.textContent = message;
 }
 
+function formatPercent(value) {
+  const percent = Number(value);
+  if (!Number.isFinite(percent)) {
+    return null;
+  }
+
+  return `${Math.max(0, Math.min(100, percent)).toFixed(1)}%`;
+}
+
+function formatBytes(value) {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return null;
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let size = bytes;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function updateProgressText(progress) {
+  const percent = formatPercent(progress?.percent);
+  const transferred = formatBytes(progress?.transferred);
+  const total = formatBytes(progress?.total);
+  const speed = formatBytes(progress?.bytesPerSecond);
+
+  const parts = [];
+  if (percent) {
+    parts.push(percent);
+  }
+
+  if (transferred && total) {
+    parts.push(`${transferred} of ${total}`);
+  }
+
+  if (speed) {
+    parts.push(`${speed}/s`);
+  }
+
+  return parts.length > 0 ? `Downloading update: ${parts.join(' - ')}` : 'Downloading update...';
+}
+
 function renderUpdateAction() {
   if (state.update.checking) {
     els.updateAction.textContent = 'Checking...';
@@ -58,7 +107,8 @@ function renderUpdateAction() {
   }
 
   if (state.update.downloading) {
-    els.updateAction.textContent = 'Downloading...';
+    const percent = formatPercent(state.update.progress?.percent);
+    els.updateAction.textContent = percent ? `Downloading ${percent}` : 'Downloading...';
     els.updateAction.disabled = true;
     return;
   }
@@ -153,7 +203,8 @@ async function checkForUpdates({ silent = false } = {}) {
     ...state.update,
     checking: true,
     downloading: false,
-    installing: false
+    installing: false,
+    progress: null
   };
   renderUpdateAction();
 
@@ -165,7 +216,8 @@ async function checkForUpdates({ silent = false } = {}) {
       installing: false,
       available: Boolean(result.available),
       latestVersion: result.latestVersion || null,
-      currentVersion: result.currentVersion || null
+      currentVersion: result.currentVersion || null,
+      progress: null
     };
 
     if (result.available) {
@@ -181,7 +233,8 @@ async function checkForUpdates({ silent = false } = {}) {
       checking: false,
       downloading: false,
       installing: false,
-      available: false
+      available: false,
+      progress: null
     };
     setStatus(error.message || 'Could not check for updates.');
     return { available: false, reason: error.message };
@@ -194,7 +247,8 @@ async function applyUpdate() {
   state.update = {
     ...state.update,
     downloading: true,
-    installing: false
+    installing: false,
+    progress: null
   };
   renderUpdateAction();
   setStatus('Downloading update...');
@@ -208,7 +262,8 @@ async function applyUpdate() {
         installing: false,
         available: false,
         latestVersion: result.latestVersion || null,
-        currentVersion: result.currentVersion || null
+        currentVersion: result.currentVersion || null,
+        progress: null
       };
       setStatus(result.reason || 'No update available.');
       return result;
@@ -221,7 +276,8 @@ async function applyUpdate() {
         installing: false,
         available: true,
         latestVersion: result.latestVersion || state.update.latestVersion,
-        currentVersion: result.currentVersion || state.update.currentVersion
+        currentVersion: result.currentVersion || state.update.currentVersion,
+        progress: null
       };
       setStatus(result.message || 'Could not download update.');
       return result;
@@ -233,7 +289,8 @@ async function applyUpdate() {
       installing: true,
       available: true,
       latestVersion: result.latestVersion || state.update.latestVersion,
-      currentVersion: result.currentVersion || state.update.currentVersion
+      currentVersion: result.currentVersion || state.update.currentVersion,
+      progress: null
     };
     setStatus(result.message || 'Update downloaded. Installing now.');
     return result;
@@ -241,7 +298,8 @@ async function applyUpdate() {
     state.update = {
       ...state.update,
       downloading: false,
-      installing: false
+      installing: false,
+      progress: null
     };
     setStatus(error.message || 'Could not install update.');
     return { ok: false, message: error.message };
@@ -336,6 +394,16 @@ function bindEvents() {
 
   window.bookApi.onUpdateDownloaded((payload) => {
     setStatus(`Update ${payload.version} downloaded. Installing now.`);
+  });
+
+  window.bookApi.onUpdateDownloadProgress((payload) => {
+    state.update = {
+      ...state.update,
+      downloading: true,
+      progress: payload
+    };
+    renderUpdateAction();
+    setStatus(updateProgressText(payload));
   });
 
   window.bookApi.onAdminServerStateChanged((payload) => {

@@ -41,6 +41,17 @@ class UpdateManager {
         });
       });
     });
+
+    autoUpdater.on('download-progress', (progress) => {
+      BrowserWindow.getAllWindows().forEach((window) => {
+        window.webContents.send('update-download-progress', {
+          percent: progress.percent,
+          bytesPerSecond: progress.bytesPerSecond,
+          transferred: progress.transferred,
+          total: progress.total
+        });
+      });
+    });
   }
 
   async checkForUpdates() {
