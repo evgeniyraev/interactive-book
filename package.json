@@ -1,6 +1,6 @@
 {
   "name": "interactive-book-app",
-  "version": "2.1.5",
+  "version": "2.1.6",
   "description": "Fullscreen interactive book with configurable design, content, and update behavior.",
   "main": "src/main/main.js",
   "author": "",
@@ -55,6 +55,9 @@
       "target": [
         "nsis"
       ]
+    },
+    "nsis": {
+      "artifactName": "${productName}.Setup.${version}.${ext}"
     },
     "linux": {
       "target": [
